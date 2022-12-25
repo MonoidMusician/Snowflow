@@ -2,14 +2,12 @@ module Main where
 
 import Prelude
 
-import Control.Plus (empty)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
 import Data.DateTime.Instant (unInstant)
-import Data.Foldable (length, oneOf)
+import Data.Foldable (oneOf)
 import Data.FoldableWithIndex (foldMapWithIndex)
-import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
 import Data.Maybe (maybe)
 import Data.Newtype (unwrap)
@@ -17,17 +15,12 @@ import Data.Number ((%))
 import Data.Number as Math
 import Data.Semigroup.Foldable (intercalateMap)
 import Data.Tuple (Tuple(..))
-import Deku.Attribute ((!:=), (:=), (<:=>))
-import Deku.Control as DC
+import Deku.Attribute ((!:=), (:=))
 import Deku.DOM as D
-import Deku.Pursx ((~~))
 import Deku.Toplevel as Deku
 import Effect (Effect)
-import Effect.Console (log)
 import FRP.Event (keepLatest)
 import FRP.Event.Time (interval)
-import Partial.Unsafe (unsafeCrashWith)
-import Type.Proxy (Proxy(..))
 
 smul :: forall f a. Bifunctor f => Semiring a => a -> f a a -> f a a
 smul c = join bimap (c * _)
@@ -150,9 +143,9 @@ main = do
             [ pure $ flip D.path [] $ oneOf
                 [ D.D !:= drawArms [vss, vss, vss, vss, vss, vss]
                 , D.FillOpacity !:= ".91"
-                -- , D.Stroke !:= "url(#linearGradientArm)"
+                , D.Stroke !:= "url(#linearGradientArm)"
                 , D.StrokeWidth !:= "0.6"
-                -- , D.Filter !:= "url(#filter17837)"
+                , D.Filter !:= "url(#filter17837)"
                 ]
             ]
           ]

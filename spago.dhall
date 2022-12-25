@@ -1,6 +1,8 @@
 { name = "snowflow"
 , dependencies =
-  [ "arrays"
+  [ "aff"
+  , "arraybuffer"
+  , "arrays"
   , "bifunctors"
   , "console"
   , "control"
@@ -17,6 +19,8 @@
   , "partial"
   , "prelude"
   , "tuples"
+  , "uint"
+  , "unsafe-coerce"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs" ]

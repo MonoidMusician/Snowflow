@@ -2,26 +2,46 @@ module Main where
 
 import Prelude
 
+import Control.Alt ((<|>))
+import Control.Apply (lift2)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
+import Data.ArrayBuffer.Typed (toArray) as AB
 import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
 import Data.DateTime.Instant (unInstant)
-import Data.Foldable (oneOf)
+import Data.Foldable (oneOf, traverse_)
 import Data.FoldableWithIndex (foldMapWithIndex)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
-import Data.Maybe (maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (unwrap)
 import Data.Number ((%))
 import Data.Number as Math
 import Data.Semigroup.Foldable (intercalateMap)
 import Data.Tuple (Tuple(..))
-import Deku.Attribute ((!:=), (:=))
+import Data.UInt as UInt
+import Deku.Attribute (cb, (!:=), (:=))
+import Deku.Control as DC
 import Deku.DOM as D
+import Deku.Listeners (slider_)
 import Deku.Toplevel as Deku
 import Effect (Effect)
-import FRP.Event (keepLatest)
+import Effect.Aff (launchAff_)
+import Effect.Class (liftEffect)
+import Effect.Class.Console (log, logShow)
+import Effect.Unsafe (unsafePerformEffect)
+import FRP.Behavior as Behavior
+import FRP.Event (keepLatest, sampleOnRight)
+import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
-import FRP.Event.Time (interval, withTime)
+import FRP.Event.Time (withTime)
+import Ocarina.Control as Oc
+import Ocarina.Core (Po2(..), bangOn)
+import Ocarina.Interpret (context, decodeAudioDataFromUri, getByteFrequencyData)
+import Ocarina.Run (run2_)
+import Ocarina.WebAPI (AnalyserNodeCb(..))
+import Partial.Unsafe (unsafeCrashWith)
+import Unsafe.Coerce (unsafeCoerce)
 
 smul :: forall f a. Bifunctor f => Semiring a => a -> f a a -> f a a
 smul c = join bimap (c * _)
@@ -40,34 +60,79 @@ toPath :: Array (Tuple Number Number) -> String
 toPath = foldMapWithIndex \i (Tuple x y) ->
   (if i == 0 then "M" else "L") <> show x <> " " <> show y
 
+skew :: Number -> Number
 skew = (_ / Math.sqrt 3.0)
+unskew :: Number -> Number
 unskew = (_ * Math.sqrt 3.0)
+skew2 :: Number -> Number
 skew2 = (_ / Math.sqrt 3.0) >>> (_ * 2.0)
+skewY :: Number -> Tuple Number Number
 skewY v = Tuple v (skew v)
+skewY2 :: Number -> Tuple Number Number
 skewY2 v = Tuple v (skew2 v)
+incr :: Int -> Number -> Number
 incr i v = Int.toNumber i * v
+prefix :: forall b70. Semiring b70 => b70 -> Array b70 -> Array b70
 prefix p ps = Array.cons p (add p <$> ps)
+prepostfix :: forall a76. Semiring a76 => a76 -> a76 -> Array a76 -> Array a76
 prepostfix p0 pn ps = Array.snoc (prefix p0 ps) pn
 
-line (Tuple x1 y1) (Tuple x2 y2) =
-  oneOf
-    [ D.X1 !:= show x1
-    , D.X2 !:= show x2
-    , D.Y1 !:= show y1
-    , D.Y2 !:= show y2
-    ]
+distr :: forall a. Tuple (Array (Array a)) (Array (Array a)) -> Array (Tuple (Array a) (Array a))
+distr (Tuple [x1,x2,x3,x4,x5,x6] [y1,y2,y3,y4,y5,y6]) =
+  let rTuple u v = join bimap Array.reverse (Tuple u v) in
+  [rTuple x1 y1, rTuple y2 y3, Tuple y4 y5, Tuple y6 x6, Tuple x5 x4, rTuple x3 x2]
+distr _ = unsafeCrashWith "Bad data"
+
+segment :: forall a. Int -> Int -> Array a -> Array (Array a)
+segment _ _ [] = []
+segment m n as = do
+  let
+    up = Int.toNumber
+    getix :: Int -> Int -> a
+    getix i j = case Array.index as (ix i j) of
+      Nothing -> unsafeCrashWith "Not enough data"
+      Just a -> a
+    ix :: Int -> Int -> Int
+    ix i j = Int.floor $
+      up (Array.length as) *
+      ((up i / up m) + (up j / up m / up n))
+    mk :: forall b. Int -> (Int -> b) -> Array b
+    mk len mapper = mapWithIndex (const <<< mapper) $
+      Array.replicate len unit
+  mk m \i -> mk n \j -> getix i j
+
+mapWithNorm :: forall a b. (Number -> a -> b) -> Array a -> Array b
+mapWithNorm f as = as # mapWithIndex \i -> f (Int.toNumber i / Int.toNumber (Array.length as))
+
+takeNorm :: forall a. Number -> Array a -> Array a
+takeNorm norm as = Array.take (Int.floor (Int.toNumber (Array.length as) * norm)) as
+
+takeNormOr :: forall a. Int -> Number -> Array a -> Array a
+takeNormOr atLeast norm as = Array.take (max atLeast (Int.floor (Int.toNumber (Array.length as) * norm))) as
 
 main :: Effect Unit
-main = do
+main = launchAff_ do
+  { event, push } <- liftEffect Event.create
+  ctx <- context
+  pizzs1 <- decodeAudioDataFromUri ctx "samples/pizzs1.wav"
+  main0 <- decodeAudioDataFromUri ctx "samples/main0.wav"
+
   let
     size = 100.0
     radius = size / 2.0
     padding = 5.0
-    center = 0.0
 
     armWidth = 2.0
     tineWidth = 4.1
     tineSkip = 1.0
+
+    line (Tuple x1 y1) (Tuple x2 y2) =
+      oneOf
+        [ D.X1 !:= show x1
+        , D.X2 !:= show x2
+        , D.Y1 !:= show y1
+        , D.Y2 !:= show y2
+        ]
 
     drawTine tineSize =
       let
@@ -91,7 +156,7 @@ main = do
             rmap (_ + incr i (tineWidth + tineSkip)) <$> drawTine tineSize
     drawArm angle (Tuple widths1 widths2) =
       map (rotate angle) $
-        drawTines widths1 <> Array.reverse (lmap negate <$> drawTines widths2)
+        (lmap negate <$> drawTines widths1) <> Array.reverse (drawTines widths2)
     drawArms =
       toPath <<< foldMapWithIndex \i -> drawArm (incr i 60.0)
 
@@ -102,13 +167,72 @@ main = do
     useStroke = false
     useFilter = false
 
-  Deku.runInBody do
-    D.div_ $ join $ Array.replicate 15
-      [ D.svg
+  analyserE <- liftEffect Event.create
+  sampleNorm <- liftEffect Event.create
+  let
+    analyserB = Behavior.behavior \e ->
+      Event.filterMap identity $
+        sampleOnRight analyserE.event $ e <#> \sample ->
+          map \analyser ->
+            sample $ unsafePerformEffect $ AB.toArray =<< getByteFrequencyData analyser
+    sampled = Behavior.sample_ analyserB animationFrame
+    sampleNormed = lift2 (takeNormOr (6*9)) (sampleNorm.event <|> pure 1.0) sampled
+
+  liftEffect $ Deku.runInBody do
+    D.div_ $ join $ Array.replicate 1
+      [ flip D.input [] $ oneOf
+        [ D.Xtype !:= "range"
+        , D.Min !:= "0.0"
+        , D.Max !:= "1.0"
+        , D.Step !:= "any"
+        , D.Value !:= "1.0"
+        , slider_ sampleNorm.push
+        ]
+      , D.svg
+          (oneOf
+            [ D.Width !:= show (padding + 2.0 * size + padding)
+            , D.Height !:= show (padding + 2.0 * size + padding)
+            , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [-radius-padding, -radius-padding, size+padding+padding, size+padding+padding])
+            , (pure Nothing <|> event) <#> \e ->
+                D.OnClick := case e of
+                  Just x -> x *> push Nothing
+                  _ -> run2_ [ Oc.analyser_ { cb: AnalyserNodeCb \v -> analyserE.push Nothing <$ analyserE.push (Just v), fftSize: TTT10 } $ [ Oc.playBuf main0 bangOn ] ]
+                         >>= Just >>> push
+            ]
+          )
+          [ D.g
+            (oneOf
+              [ D.Fill !:= "#bfe6ff"
+              , D.StrokeLinecap !:= "butt"
+              , D.StrokeLinejoin !:= "miter"
+              , D.StrokeOpacity !:= "1"
+              ]
+            ) $ join
+            let v = 3.0 in
+            let vs = [1.0,v,v,6.0,4.0,4.0,5.0,v,1.0] in
+            let vss = join Tuple vs in
+            [ pure $ flip D.path [] $ oneOf
+                [ (pure [0.0] <|> (map UInt.toNumber <$> sampleNormed)) <#> \freqs ->
+                    let
+                      segmented = segment 6 9 $ freqs # mapWithNorm \i -> (_ / (32.0 - i * 24.0))
+                    in D.D := drawArms (distr (join Tuple segmented))
+                , D.FillOpacity !:= ".91"
+                , D.Stroke !:= if useStroke then "url(#linearGradientArm)" else "none"
+                , D.StrokeWidth !:= "0.6"
+                , D.Filter !:= if useFilter then "url(#filter17837)" else "none"
+                ]
+            ]
+          ]
+      , D.svg
           (oneOf
             [ D.Width !:= show (padding + size + padding)
             , D.Height !:= show (padding + size + padding)
             , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [-radius-padding, -radius-padding, size+padding+padding, size+padding+padding])
+            , (pure Nothing <|> event) <#> \e ->
+                D.OnClick := case e of
+                  Just x -> x *> push Nothing
+                  _ -> run2_ [ Oc.analyser_ { cb: AnalyserNodeCb \v -> analyserE.push Nothing <$ analyserE.push (Just v), fftSize: TTT8 } $ [ Oc.playBuf pizzs1 bangOn ] ]
+                         >>= Just >>> push
             ]
           )
           [ D.defs_

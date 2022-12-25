@@ -20,7 +20,8 @@ import Deku.DOM as D
 import Deku.Toplevel as Deku
 import Effect (Effect)
 import FRP.Event (keepLatest)
-import FRP.Event.Time (interval)
+import FRP.Event.AnimationFrame (animationFrame)
+import FRP.Event.Time (interval, withTime)
 
 smul :: forall f a. Bifunctor f => Semiring a => a -> f a a -> f a a
 smul c = join bimap (c * _)
@@ -94,8 +95,12 @@ main = do
     drawArms =
       toPath <<< foldMapWithIndex \i -> drawArm (incr i 60.0)
 
-    rotating = interval (Int.round (1000.0 / 60.0)) <#> unInstant >>> unwrap >>> \t ->
+    rotating = map _.time (withTime animationFrame) <#> unInstant >>> unwrap >>> \t ->
       t / 1000.0 * 120.0
+
+    rotateGrad = false
+    useStroke = false
+    useFilter = false
 
   Deku.runInBody do
     D.div_ $ join $ Array.replicate 15
@@ -111,7 +116,7 @@ main = do
               (oneOf
                 [ D.Id !:= "linearGradientArm"
                 , D.GradientUnits !:= "userSpaceOnUse"
-                , keepLatest $ rotating <#> \angle ->
+                , keepLatest $ (if rotateGrad then rotating else pure 0.0) <#> \angle ->
                     line (rotate angle (Tuple 0.0 radius)) (rotate angle (Tuple 0.0 (negate radius)))
                 ]
               )
@@ -134,7 +139,7 @@ main = do
               , D.StrokeLinejoin !:= "miter"
               , D.StrokeOpacity !:= "1"
               , rotating <#> \angle ->
-                  D.Transform := "rotate(" <> show (Int.round $ ((angle + 30.0) % 60.0) - 30.0) <> ")"
+                  D.Transform := "rotate(" <> show (Int.round $ ((angle + 30.0) % if rotateGrad then 360.0 else 60.0) - 30.0) <> ")"
               ]
             ) $ join
             let v = 3.0 in
@@ -143,9 +148,9 @@ main = do
             [ pure $ flip D.path [] $ oneOf
                 [ D.D !:= drawArms [vss, vss, vss, vss, vss, vss]
                 , D.FillOpacity !:= ".91"
-                , D.Stroke !:= "url(#linearGradientArm)"
+                , D.Stroke !:= if useStroke then "url(#linearGradientArm)" else "none"
                 , D.StrokeWidth !:= "0.6"
-                , D.Filter !:= "url(#filter17837)"
+                , D.Filter !:= if useFilter then "url(#filter17837)" else "none"
                 ]
             ]
           ]

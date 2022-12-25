@@ -150,6 +150,22 @@
   var pure = function(dict) {
     return dict.pure;
   };
+  var unless = function(dictApplicative) {
+    var pure14 = pure(dictApplicative);
+    return function(v) {
+      return function(v1) {
+        if (!v) {
+          return v1;
+        }
+        ;
+        if (v) {
+          return pure14(unit);
+        }
+        ;
+        throw new Error("Failed pattern match at Control.Applicative (line 68, column 1 - line 68, column 65): " + [v.constructor.name, v1.constructor.name]);
+      };
+    };
+  };
   var liftA1 = function(dictApplicative) {
     var apply5 = apply(dictApplicative.Apply0());
     var pure14 = pure(dictApplicative);
@@ -413,6 +429,17 @@
   };
 
   // output/Control.Monad/index.js
+  var unlessM = function(dictMonad) {
+    var bind4 = bind(dictMonad.Bind1());
+    var unless2 = unless(dictMonad.Applicative0());
+    return function(mb) {
+      return function(m) {
+        return bind4(mb)(function(b) {
+          return unless2(b)(m);
+        });
+      };
+    };
+  };
   var ap = function(dictMonad) {
     var bind4 = bind(dictMonad.Bind1());
     var pure5 = pure(dictMonad.Applicative0());
@@ -3002,23 +3029,10 @@
       clearTimeout(id);
     };
   }
-  function setIntervalImpl(ms) {
-    return function(fn) {
-      return function() {
-        return setInterval(fn, ms);
-      };
-    };
-  }
-  function clearIntervalImpl(id) {
-    return function() {
-      clearInterval(id);
-    };
-  }
 
   // output/Effect.Timer/index.js
   var compare2 = /* @__PURE__ */ compare(ordInt);
   var setTimeout2 = setTimeoutImpl;
-  var setInterval2 = setIntervalImpl;
   var eqTimeoutId = {
     eq: function(x) {
       return function(y) {
@@ -3037,7 +3051,6 @@
     }
   };
   var clearTimeout2 = clearTimeoutImpl;
-  var clearInterval2 = clearIntervalImpl;
 
   // output/Effect.Uncurried/foreign.js
   var mkEffectFn1 = function mkEffectFn12(fn) {
@@ -5729,6 +5742,13 @@
       return window2.document;
     };
   }
+  function requestAnimationFrame(fn) {
+    return function(window2) {
+      return function() {
+        return window2.requestAnimationFrame(fn);
+      };
+    };
+  }
 
   // output/Deku.Toplevel/index.js
   var bind3 = /* @__PURE__ */ bind(bindEffect);
@@ -5765,21 +5785,56 @@
     return $$void6(runInBody$prime(a));
   };
 
+  // output/FRP.Event.AnimationFrame/index.js
+  var $runtime_lazy4 = function(name15, moduleName, init2) {
+    var state4 = 0;
+    var val;
+    return function(lineNumber) {
+      if (state4 === 2)
+        return val;
+      if (state4 === 1)
+        throw new ReferenceError(name15 + " was needed before it finished initializing (module " + moduleName + ", line " + lineNumber + ")", moduleName, lineNumber);
+      state4 = 1;
+      val = init2();
+      state4 = 2;
+      return val;
+    };
+  };
+  var $$void7 = /* @__PURE__ */ $$void(functorEffect);
+  var unlessM2 = /* @__PURE__ */ unlessM(monadEffect);
+  var animationFrame = /* @__PURE__ */ makeEvent(function(k) {
+    return function __do2() {
+      var w = windowImpl();
+      var cancelled = $$new(false)();
+      var $lazy_loop = $runtime_lazy4("loop", "FRP.Event.AnimationFrame", function() {
+        return $$void7(requestAnimationFrame(function __do3() {
+          k(unit)();
+          return unlessM2(read(cancelled))($lazy_loop(19))();
+        })(w));
+      });
+      var loop2 = $lazy_loop(16);
+      loop2();
+      return write(true)(cancelled);
+    };
+  });
+
   // output/Effect.Now/foreign.js
   function now() {
     return Date.now();
   }
 
   // output/FRP.Event.Time/index.js
-  var interval = function(n) {
+  var withTime = function(e) {
     return makeEvent(function(k) {
-      return function __do2() {
-        var id = setInterval2(n)(function __do3() {
+      return subscribe(e)(function(value12) {
+        return function __do2() {
           var time2 = now();
-          return k(time2)();
-        })();
-        return clearInterval2(id);
-      };
+          return k({
+            time: time2,
+            value: value12
+          })();
+        };
+      });
     });
   };
 
@@ -5810,8 +5865,8 @@
   var toPath = /* @__PURE__ */ foldMapWithIndex2(monoidString)(function(i) {
     return function(v) {
       return function() {
-        var $97 = i === 0;
-        if ($97) {
+        var $100 = i === 0;
+        if ($100) {
           return "M";
         }
         ;
@@ -5878,12 +5933,14 @@
     };
   };
   var main = /* @__PURE__ */ function() {
-    var rotating = mapFlipped3(interval(round2(1e3 / 60)))(function() {
-      var $115 = unwrap();
-      return function($116) {
+    var rotating = mapFlipped3(map(functorEvent)(function(v) {
+      return v.time;
+    })(withTime(animationFrame)))(function() {
+      var $122 = unwrap();
+      return function($123) {
         return function(t) {
           return t / 1e3 * 120;
-        }($115(unInstant($116)));
+        }($122(unInstant($123)));
       };
     }());
     var radius = 100 / 2;
@@ -5908,21 +5965,45 @@
       };
     };
     var drawArms = function() {
-      var $117 = foldMapWithIndex1(function(i) {
+      var $124 = foldMapWithIndex1(function(i) {
         return drawArm(incr(i)(60));
       });
-      return function($118) {
-        return toPath($117($118));
+      return function($125) {
+        return toPath($124($125));
       };
     }();
-    return runInBody(div_(join1(replicate(15)([svg(oneOf4([pureAttr(attrSvg_WidthString)(Width.value)(show3(5 + 100 + 5)), pureAttr(attrSvg_HeightString)(Height.value)(show3(5 + 100 + 5)), pureAttr(attrSvg_ViewBoxString)(ViewBox.value)(maybe(mempty(monoidString))(intercalateMap(foldable1NonEmptyArray)(semigroupString)(" ")(show3))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5])))]))([defs_([linearGradient(oneOf4([pureAttr(attrLinearGradient_IdStri)(Id.value)("linearGradientArm"), pureAttr(attrLinearGradient_Gradie)(GradientUnits.value)("userSpaceOnUse"), keepLatest(eventIsEvent)(mapFlipped3(rotating)(function(angle) {
+    return runInBody(div_(join1(replicate(15)([svg(oneOf4([pureAttr(attrSvg_WidthString)(Width.value)(show3(5 + 100 + 5)), pureAttr(attrSvg_HeightString)(Height.value)(show3(5 + 100 + 5)), pureAttr(attrSvg_ViewBoxString)(ViewBox.value)(maybe(mempty(monoidString))(intercalateMap(foldable1NonEmptyArray)(semigroupString)(" ")(show3))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5])))]))([defs_([linearGradient(oneOf4([pureAttr(attrLinearGradient_IdStri)(Id.value)("linearGradientArm"), pureAttr(attrLinearGradient_Gradie)(GradientUnits.value)("userSpaceOnUse"), keepLatest(eventIsEvent)(mapFlipped3(function() {
+      if (false) {
+        return rotating;
+      }
+      ;
+      return pure(applicativeEvent)(0);
+    }())(function(angle) {
       return line1(rotate(angle)(new Tuple(0, radius)))(rotate(angle)(new Tuple(0, -radius)));
     }))]))([flip(stop)([])(oneOf4([pureAttr2(Offset.value)("0"), pureAttr1(StopColor.value)("#6b91ab"), pureAttr22(StopOpacity.value)("0.9")])), flip(stop)([])(oneOf4([pureAttr2(Offset.value)("1"), pureAttr1(StopColor.value)("#f3feff"), pureAttr22(StopOpacity.value)("0.95")]))])]), g(oneOf4([pureAttr(attrG_FillString)(Fill.value)("#bfe6ff"), pureAttr(attrG_StrokeLinecapString)(StrokeLinecap.value)("butt"), pureAttr(attrG_StrokeLinejoinStrin)(StrokeLinejoin.value)("miter"), pureAttr(attrG_StrokeOpacityString)(StrokeOpacity.value)("1"), mapFlipped3(rotating)(function(angle) {
-      return attr2(Transform.value)("rotate(" + (show1(round2(remainder(angle + 30)(60) - 30)) + ")"));
+      return attr2(Transform.value)("rotate(" + (show1(round2(remainder(angle + 30)(function() {
+        if (false) {
+          return 360;
+        }
+        ;
+        return 60;
+      }()) - 30)) + ")"));
     })]))(join1(function() {
       var vs = [1, 3, 3, 6, 4, 4, 5, 3, 1];
       var vss = join2(Tuple.create)(vs);
-      return [pure(applicativeArray)(flip(path)([])(oneOf4([pureAttr(attrPath_DString)(D.value)(drawArms([vss, vss, vss, vss, vss, vss])), pureAttr(attrPath_FillOpacityStrin)(FillOpacity.value)(".91"), pureAttr(attrPath_StrokeString)(Stroke.value)("url(#linearGradientArm)"), pureAttr(attrPath_StrokeWidthStrin)(StrokeWidth.value)("0.6"), pureAttr(attrPath_FilterString)(Filter.value)("url(#filter17837)")])))];
+      return [pure(applicativeArray)(flip(path)([])(oneOf4([pureAttr(attrPath_DString)(D.value)(drawArms([vss, vss, vss, vss, vss, vss])), pureAttr(attrPath_FillOpacityStrin)(FillOpacity.value)(".91"), pureAttr(attrPath_StrokeString)(Stroke.value)(function() {
+        if (false) {
+          return "url(#linearGradientArm)";
+        }
+        ;
+        return "none";
+      }()), pureAttr(attrPath_StrokeWidthStrin)(StrokeWidth.value)("0.6"), pureAttr(attrPath_FilterString)(Filter.value)(function() {
+        if (false) {
+          return "url(#filter17837)";
+        }
+        ;
+        return "none";
+      }())])))];
     }()))])]))));
   }();
 

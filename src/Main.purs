@@ -38,7 +38,7 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior as Behavior
-import FRP.Event (keepLatest, sampleOnRight)
+import FRP.Event (Event, hot, keepLatest, sampleOnRight)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Time (withTime)
@@ -226,6 +226,11 @@ noteName =
 timbre :: Array (Array Number) -> Array Number
 timbre = maximumBy (compare `on` sum) >>> fromMaybe []
 
+norm :: Array Number -> Array (Tuple Number Number)
+norm values =
+  let total = sum values in
+  values # mapWithIndex \i v -> Tuple (sum (Array.take i values) / total) (v / total)
+
 mapWithNorm :: forall a b. (Number -> a -> b) -> Array a -> Array b
 mapWithNorm f as = as # mapWithIndex \i -> f (Int.toNumber i / Int.toNumber (Array.length as))
 
@@ -236,6 +241,11 @@ takeNormOr :: forall a. Int -> Number -> Array a -> Array a
 takeNormOr atLeast norm as = Array.take (max atLeast (Int.floor (Int.toNumber (Array.length as) * norm))) as
 
 
+unsafeMemoize :: Event ~> Event
+unsafeMemoize e = unsafePerformEffect do
+  { push, event } <- Event.create
+  void $ Event.subscribe e push
+  pure event
 
 
 main :: Effect Unit
@@ -304,11 +314,11 @@ main = launchAff_ do
         sampleOnRight analyserE.event $ e <#> \sample ->
           map \analyser ->
             sample $ unsafePerformEffect $ AB.toArray =<< getByteFrequencyData analyser
-    sampled = map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
+    sampled = unsafeMemoize $ map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
     sampleNormed = dedup $ lift2 (takeNormOr (6*9)) (sampleNorm.event <|> pure 1.0) (mapWithNorm Tuple <$> sampled <|> pure [Tuple 0.0 0.0])
-    currentNoteScores = sampled <#> noteScores main0
-    currentNoteScores' = sampled <#> noteScores' main0
-    currentTimbre = currentNoteScores' <#> timbre
+    currentNoteScores = unsafeMemoize $ sampled <#> noteScores main0
+    currentNoteScores' = unsafeMemoize $ sampled <#> noteScores' main0
+    currentTimbre = unsafeMemoize $ currentNoteScores' <#> timbre >>> norm
 
 
   liftEffect $ Deku.runInBody do
@@ -324,22 +334,38 @@ main = launchAff_ do
         , D.Value !:= "1.0"
         , slider_ sampleNorm.push
         ]
-      , D.div (D.Class !:= "bars") $
-          octave <#> \i ->
+      , D.svg
+          (oneOf
+            [ D.Width !:= show 240.0
+            , D.Height !:= show 240.0
+            , D.Fill !:= "green"
+            , D.Style !:= "display:block"
+            ]
+          ) $ octave <#> \i ->
             let
-              height :: Event.Event String
-              height = currentNoteScores # Event.filterMap \scores ->
-                (scores !! i) <#> \score ->
-                  "height:" <> show (score / 100.0) <> "px"
-            in D.div (D.Style <:=> height) []
-      , D.div (D.Class !:= "divvy") $
-          octave <#> \i ->
-            let
-              width :: Event.Event String
-              width = currentTimbre <#> \scores ->
-                fromMaybe 0.0 (scores !! i) # \score ->
-                  "flex-grow:" <> show (score)
-            in D.div (D.Style <:=> width) []
+              height = dedup $ currentNoteScores # Event.filterMap \scores ->
+                (scores !! i) <#> \score -> Math.round $ score / 100.0
+            in flip D.rect [] $ oneOf
+              [ D.Width !:= show 20.0
+              , D.X !:= show (Int.toNumber i * 20.0)
+              , D.Height <:=> map show height
+              , D.Y <:=> map (show <<< (240.0 - _)) height
+              ]
+      , D.svg
+          (oneOf
+            [ D.Width !:= show 240.0
+            , D.Height !:= show 20.0
+            , D.Style !:= "display:block"
+            ]
+          ) $ octave <#> \i ->
+            let info = dedup $ currentTimbre <#> flip Array.index i >>> fromMaybe (Tuple 0.0 0.0) >>> join bimap (_ * 240.0)
+            in
+              flip D.rect [] $ oneOf
+                [ D.Height !:= show 20.0
+                , D.X <:=> map (show <<< fst) info
+                , D.Width <:=> map (show <<< snd) info
+                , D.Fill !:= if i == 0 then "red" else if (mod i 2) == 0 then "blue" else "gray"
+                ]
       , D.h1_ [ DC.text $ pure "..." <|> dedup (guessNote <$> currentNoteScores) ]
       , D.br_ []
       --, DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> map snd >>> noteScores main0

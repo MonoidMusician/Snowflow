@@ -347,11 +347,11 @@
     return flip(bind(dictBind));
   };
   var composeKleisli = function(dictBind) {
-    var bind12 = bind(dictBind);
+    var bind13 = bind(dictBind);
     return function(f) {
       return function(g2) {
         return function(a2) {
-          return bind12(f(a2))(g2);
+          return bind13(f(a2))(g2);
         };
       };
     };
@@ -362,9 +362,9 @@
     }
   };
   var join = function(dictBind) {
-    var bind12 = bind(dictBind);
+    var bind13 = bind(dictBind);
     return function(m) {
-      return bind12(m)(identity3);
+      return bind13(m)(identity3);
     };
   };
 
@@ -777,24 +777,24 @@
 
   // output/Control.Monad/index.js
   var unlessM = function(dictMonad) {
-    var bind7 = bind(dictMonad.Bind1());
+    var bind6 = bind(dictMonad.Bind1());
     var unless2 = unless(dictMonad.Applicative0());
     return function(mb) {
       return function(m) {
-        return bind7(mb)(function(b2) {
+        return bind6(mb)(function(b2) {
           return unless2(b2)(m);
         });
       };
     };
   };
   var ap = function(dictMonad) {
-    var bind7 = bind(dictMonad.Bind1());
-    var pure9 = pure(dictMonad.Applicative0());
+    var bind6 = bind(dictMonad.Bind1());
+    var pure8 = pure(dictMonad.Applicative0());
     return function(f) {
       return function(a2) {
-        return bind7(f)(function(f$prime) {
-          return bind7(a2)(function(a$prime) {
-            return pure9(f$prime(a$prime));
+        return bind6(f)(function(f$prime) {
+          return bind6(a2)(function(a$prime) {
+            return pure8(f$prime(a$prime));
           });
         });
       };
@@ -1809,13 +1809,13 @@
   };
   var traverse_ = function(dictApplicative) {
     var applySecond5 = applySecond(dictApplicative.Apply0());
-    var pure9 = pure(dictApplicative);
+    var pure8 = pure(dictApplicative);
     return function(dictFoldable) {
       var foldr22 = foldr(dictFoldable);
       return function(f) {
         return foldr22(function($454) {
           return applySecond5(f($454));
-        })(pure9(unit));
+        })(pure8(unit));
       };
     };
   };
@@ -1957,13 +1957,13 @@
     }
     return function(apply5) {
       return function(map17) {
-        return function(pure9) {
+        return function(pure8) {
           return function(f) {
             return function(array) {
               function go2(bot, top3) {
                 switch (top3 - bot) {
                   case 0:
-                    return pure9([]);
+                    return pure8([]);
                   case 1:
                     return map17(array1)(f(array[bot]));
                   case 2:
@@ -4705,7 +4705,7 @@
   function runST(f) {
     return f();
   }
-  function _foldM(bind7) {
+  function _foldM(bind6) {
     return function(f) {
       return function(mz) {
         return function(m) {
@@ -4717,7 +4717,7 @@
           }
           for (var k in m) {
             if (hasOwnProperty.call(m, k)) {
-              acc = bind7(acc)(g2(k));
+              acc = bind6(acc)(g2(k));
             }
           }
           return acc;
@@ -5223,25 +5223,6 @@
     };
   };
 
-  // output/Deku.DOM.Attr.Class/index.js
-  var Class = /* @__PURE__ */ function() {
-    function Class2() {
-    }
-    ;
-    Class2.value = new Class2();
-    return Class2;
-  }();
-  var attrDiv_ClassString = {
-    attr: function(v) {
-      return function(value12) {
-        return unsafeAttribute({
-          key: "class",
-          value: prop$prime(value12)
-        });
-      };
-    }
-  };
-
   // output/Deku.DOM.Attr.D/index.js
   var D = /* @__PURE__ */ function() {
     function D2() {
@@ -5269,6 +5250,26 @@
     Fill2.value = new Fill2();
     return Fill2;
   }();
+  var attrSvg_FillString = {
+    attr: function(v) {
+      return function(value12) {
+        return unsafeAttribute({
+          key: "fill",
+          value: prop$prime(value12)
+        });
+      };
+    }
+  };
+  var attrRect_FillString = {
+    attr: function(v) {
+      return function(value12) {
+        return unsafeAttribute({
+          key: "fill",
+          value: prop$prime(value12)
+        });
+      };
+    }
+  };
   var attrG_FillString = {
     attr: function(v) {
       return function(value12) {
@@ -5346,6 +5347,16 @@
     return Height2;
   }();
   var attrSvg_HeightString = {
+    attr: function(v) {
+      return function(value12) {
+        return unsafeAttribute({
+          key: "height",
+          value: prop$prime(value12)
+        });
+      };
+    }
+  };
+  var attrRect_HeightString = {
     attr: function(v) {
       return function(value12) {
         return unsafeAttribute({
@@ -5612,7 +5623,7 @@
     Style2.value = new Style2();
     return Style2;
   }();
-  var attrDiv_StyleString = {
+  var attrSvg_StyleString = {
     attr: function(v) {
       return function(value12) {
         return unsafeAttribute({
@@ -5698,6 +5709,35 @@
       };
     }
   };
+  var attrRect_WidthString = {
+    attr: function(v) {
+      return function(value12) {
+        return unsafeAttribute({
+          key: "width",
+          value: prop$prime(value12)
+        });
+      };
+    }
+  };
+
+  // output/Deku.DOM.Attr.X/index.js
+  var X = /* @__PURE__ */ function() {
+    function X3() {
+    }
+    ;
+    X3.value = new X3();
+    return X3;
+  }();
+  var attrRect_XString = {
+    attr: function(v) {
+      return function(value12) {
+        return unsafeAttribute({
+          key: "x",
+          value: prop$prime(value12)
+        });
+      };
+    }
+  };
 
   // output/Deku.DOM.Attr.X1/index.js
   var X1 = /* @__PURE__ */ function() {
@@ -5750,6 +5790,25 @@
       return function(value12) {
         return unsafeAttribute({
           key: "type",
+          value: prop$prime(value12)
+        });
+      };
+    }
+  };
+
+  // output/Deku.DOM.Attr.Y/index.js
+  var Y = /* @__PURE__ */ function() {
+    function Y3() {
+    }
+    ;
+    Y3.value = new Y3();
+    return Y3;
+  }();
+  var attrRect_YString = {
+    attr: function(v) {
+      return function(value12) {
+        return unsafeAttribute({
+          key: "y",
           value: prop$prime(value12)
         });
       };
@@ -5871,19 +5930,27 @@
     };
   };
 
-  // output/Deku.DOM.Elt.Stop/index.js
+  // output/Deku.DOM.Elt.Rect/index.js
   var coerce12 = /* @__PURE__ */ coerce();
+  var rect = function(attributes) {
+    return function(kids) {
+      return new Element$prime(elementify("rect")(attributes)(coerce12(fixed(coerce12(mapWithIndex(unsafeSetPos)(kids))))));
+    };
+  };
+
+  // output/Deku.DOM.Elt.Stop/index.js
+  var coerce13 = /* @__PURE__ */ coerce();
   var stop = function(attributes) {
     return function(kids) {
-      return new Element$prime(elementify("stop")(attributes)(coerce12(fixed(coerce12(mapWithIndex(unsafeSetPos)(kids))))));
+      return new Element$prime(elementify("stop")(attributes)(coerce13(fixed(coerce13(mapWithIndex(unsafeSetPos)(kids))))));
     };
   };
 
   // output/Deku.DOM.Elt.Svg/index.js
-  var coerce13 = /* @__PURE__ */ coerce();
+  var coerce14 = /* @__PURE__ */ coerce();
   var svg = function(attributes) {
     return function(kids) {
-      return new Element$prime(elementify("svg")(attributes)(coerce13(fixed(coerce13(mapWithIndex(unsafeSetPos)(kids))))));
+      return new Element$prime(elementify("svg")(attributes)(coerce14(fixed(coerce14(mapWithIndex(unsafeSetPos)(kids))))));
     };
   };
 
@@ -6846,13 +6913,13 @@
     };
   };
   var bindExceptT = function(dictMonad) {
-    var bind7 = bind(dictMonad.Bind1());
-    var pure9 = pure(dictMonad.Applicative0());
+    var bind6 = bind(dictMonad.Bind1());
+    var pure8 = pure(dictMonad.Applicative0());
     return {
       bind: function(v) {
         return function(k) {
-          return bind7(v)(either(function($187) {
-            return pure9(Left.create($187));
+          return bind6(v)(either(function($187) {
+            return pure8(Left.create($187));
           })(function(a2) {
             var v1 = k(a2);
             return v1;
@@ -6904,25 +6971,25 @@
     var append6 = append(dictSemigroup);
     return function(dictMonad) {
       var Bind1 = dictMonad.Bind1();
-      var bind7 = bind(Bind1);
-      var pure9 = pure(dictMonad.Applicative0());
+      var bind6 = bind(Bind1);
+      var pure8 = pure(dictMonad.Applicative0());
       var functorExceptT1 = functorExceptT(Bind1.Apply0().Functor0());
       return {
         alt: function(v) {
           return function(v1) {
-            return bind7(v)(function(rm) {
+            return bind6(v)(function(rm) {
               if (rm instanceof Right) {
-                return pure9(new Right(rm.value0));
+                return pure8(new Right(rm.value0));
               }
               ;
               if (rm instanceof Left) {
-                return bind7(v1)(function(rn) {
+                return bind6(v1)(function(rn) {
                   if (rn instanceof Right) {
-                    return pure9(new Right(rn.value0));
+                    return pure8(new Right(rn.value0));
                   }
                   ;
                   if (rn instanceof Left) {
-                    return pure9(new Left(append6(rm.value0)(rn.value0)));
+                    return pure8(new Left(append6(rm.value0)(rn.value0)));
                   }
                   ;
                   throw new Error("Failed pattern match at Control.Monad.Except.Trans (line 86, column 9 - line 88, column 49): " + [rn.constructor.name]);
@@ -7854,12 +7921,12 @@
     };
   };
   var bindStateT = function(dictMonad) {
-    var bind7 = bind(dictMonad.Bind1());
+    var bind6 = bind(dictMonad.Bind1());
     return {
       bind: function(v) {
         return function(f) {
           return function(s2) {
-            return bind7(v(s2))(function(v1) {
+            return bind6(v(s2))(function(v1) {
               var v3 = f(v1.value0);
               return v3(v1.value1);
             });
@@ -7881,11 +7948,11 @@
     };
   };
   var applicativeStateT = function(dictMonad) {
-    var pure9 = pure(dictMonad.Applicative0());
+    var pure8 = pure(dictMonad.Applicative0());
     return {
       pure: function(a2) {
         return function(s2) {
-          return pure9(new Tuple(a2, s2));
+          return pure8(new Tuple(a2, s2));
         };
       },
       Apply0: function() {
@@ -7894,12 +7961,12 @@
     };
   };
   var monadStateStateT = function(dictMonad) {
-    var pure9 = pure(dictMonad.Applicative0());
+    var pure8 = pure(dictMonad.Applicative0());
     var monadStateT1 = monadStateT(dictMonad);
     return {
       state: function(f) {
         return function($200) {
-          return pure9(f($200));
+          return pure8(f($200));
         };
       },
       Monad0: function() {
@@ -10142,12 +10209,12 @@
       });
     };
   };
-  var coerce14 = function(fn) {
+  var coerce15 = function(fn) {
     return either(function(v) {
       return error("Promise failed, couldn't extract JS Error or String");
     })(identity12)(runExcept(alt8(unsafeReadTagged2("Error")(fn))(map13(error)(readString2(fn)))));
   };
-  var toAff = /* @__PURE__ */ toAff$prime(coerce14);
+  var toAff = /* @__PURE__ */ toAff$prime(coerce15);
   var toAffE = function(f) {
     return bind5(liftEffect2(f))(toAff);
   };
@@ -10286,6 +10353,8 @@
   };
 
   // output/Main/index.js
+  var discard3 = /* @__PURE__ */ discard(discardUnit);
+  var $$void11 = /* @__PURE__ */ $$void(functorEffect);
   var foldMapWithIndex2 = /* @__PURE__ */ foldMapWithIndex(foldableWithIndexArray);
   var eq3 = /* @__PURE__ */ eq(eqInt);
   var show4 = /* @__PURE__ */ show(showNumber);
@@ -10301,10 +10370,10 @@
   var bimap2 = /* @__PURE__ */ bimap(bifunctorTuple);
   var mod3 = /* @__PURE__ */ mod(euclideanRingInt);
   var map16 = /* @__PURE__ */ map(functorTuple);
-  var bind6 = /* @__PURE__ */ bind(bindAff);
+  var bind12 = /* @__PURE__ */ bind(bindAff);
   var liftEffect3 = /* @__PURE__ */ liftEffect(monadEffectAff);
   var context3 = /* @__PURE__ */ context(monadEffectAff);
-  var discard3 = /* @__PURE__ */ discard(discardUnit)(bindAff);
+  var discard22 = /* @__PURE__ */ discard3(bindAff);
   var log4 = /* @__PURE__ */ log3(monadEffectAff);
   var mapFlipped1 = /* @__PURE__ */ mapFlipped(functorEvent);
   var map24 = /* @__PURE__ */ map(functorEvent);
@@ -10329,22 +10398,31 @@
   var bindFlipped2 = /* @__PURE__ */ bindFlipped(bindEffect);
   var toArray6 = /* @__PURE__ */ toArray(typedArrayUint8);
   var sample_2 = /* @__PURE__ */ sample_(functorEvent);
+  var eqTuple2 = /* @__PURE__ */ eqTuple(eqNumber)(eqNumber);
   var lift23 = /* @__PURE__ */ lift2(applyEvent);
   var alt9 = /* @__PURE__ */ alt(altEvent);
-  var pure8 = /* @__PURE__ */ pure(applicativeEvent);
+  var pure15 = /* @__PURE__ */ pure(applicativeEvent);
   var join1 = /* @__PURE__ */ join(bindArray);
   var pureAttr4 = /* @__PURE__ */ pureAttr(attrInput_XtypeString);
   var pureAttr5 = /* @__PURE__ */ pureAttr(attrInput_MinString);
   var pureAttr6 = /* @__PURE__ */ pureAttr(attrInput_MaxString);
   var pureAttr7 = /* @__PURE__ */ pureAttr(attrInput_StepString);
   var pureAttr8 = /* @__PURE__ */ pureAttr(attrInput_ValueString);
-  var pureAttr9 = /* @__PURE__ */ pureAttr(attrDiv_ClassString);
+  var pureAttr9 = /* @__PURE__ */ pureAttr(attrSvg_WidthString);
+  var pureAttr10 = /* @__PURE__ */ pureAttr(attrSvg_HeightString);
+  var pureAttr11 = /* @__PURE__ */ pureAttr(attrSvg_FillString);
+  var pureAttr12 = /* @__PURE__ */ pureAttr(attrSvg_StyleString);
   var mapFlipped22 = /* @__PURE__ */ mapFlipped(functorMaybe);
+  var pureAttr13 = /* @__PURE__ */ pureAttr(attrRect_WidthString);
+  var pureAttr14 = /* @__PURE__ */ pureAttr(attrRect_XString);
   var mapAttr2 = /* @__PURE__ */ mapAttr(functorEvent);
-  var mapAttr1 = /* @__PURE__ */ mapAttr2(attrDiv_StyleString);
-  var pureAttr10 = /* @__PURE__ */ pureAttr(attrSvg_WidthString);
-  var pureAttr11 = /* @__PURE__ */ pureAttr(attrSvg_HeightString);
-  var pureAttr12 = /* @__PURE__ */ pureAttr(attrSvg_ViewBoxString);
+  var mapAttr1 = /* @__PURE__ */ mapAttr2(attrRect_HeightString);
+  var mapAttr22 = /* @__PURE__ */ mapAttr2(attrRect_YString);
+  var pureAttr15 = /* @__PURE__ */ pureAttr(attrRect_HeightString);
+  var mapAttr3 = /* @__PURE__ */ mapAttr2(attrRect_XString);
+  var mapAttr4 = /* @__PURE__ */ mapAttr2(attrRect_WidthString);
+  var pureAttr16 = /* @__PURE__ */ pureAttr(attrRect_FillString);
+  var pureAttr17 = /* @__PURE__ */ pureAttr(attrSvg_ViewBoxString);
   var mempty5 = /* @__PURE__ */ mempty(monoidString);
   var intercalateMap2 = /* @__PURE__ */ intercalateMap(foldable1NonEmptyArray)(semigroupString);
   var attr3 = /* @__PURE__ */ attr(attrOnClickEffectUnit);
@@ -10363,33 +10441,40 @@
   var sinOsc2 = /* @__PURE__ */ sinOsc(initialSinOscNumber);
   var bangOn2 = /* @__PURE__ */ bangOn();
   var playBuf2 = /* @__PURE__ */ playBuf(initialPlayBufBrowserAudi);
-  var pureAttr13 = /* @__PURE__ */ pureAttr(attrG_FillString);
-  var pureAttr14 = /* @__PURE__ */ pureAttr(attrG_StrokeLinecapString);
-  var pureAttr15 = /* @__PURE__ */ pureAttr(attrG_StrokeLinejoinStrin);
-  var pureAttr16 = /* @__PURE__ */ pureAttr(attrG_StrokeOpacityString);
-  var pure15 = /* @__PURE__ */ pure(applicativeArray);
-  var mapAttr22 = /* @__PURE__ */ mapAttr2(attrPath_DString);
-  var pureAttr17 = /* @__PURE__ */ pureAttr(attrPath_FillOpacityStrin);
-  var pureAttr18 = /* @__PURE__ */ pureAttr(attrPath_StrokeString);
-  var pureAttr19 = /* @__PURE__ */ pureAttr(attrPath_StrokeWidthStrin);
-  var pureAttr20 = /* @__PURE__ */ pureAttr(attrPath_FilterString);
-  var pureAttr21 = /* @__PURE__ */ pureAttr(attrLinearGradient_IdStri);
-  var pureAttr222 = /* @__PURE__ */ pureAttr(attrLinearGradient_Gradie);
+  var pureAttr18 = /* @__PURE__ */ pureAttr(attrG_FillString);
+  var pureAttr19 = /* @__PURE__ */ pureAttr(attrG_StrokeLinecapString);
+  var pureAttr20 = /* @__PURE__ */ pureAttr(attrG_StrokeLinejoinStrin);
+  var pureAttr21 = /* @__PURE__ */ pureAttr(attrG_StrokeOpacityString);
+  var pure24 = /* @__PURE__ */ pure(applicativeArray);
+  var mapAttr5 = /* @__PURE__ */ mapAttr2(attrPath_DString);
+  var pureAttr222 = /* @__PURE__ */ pureAttr(attrPath_FillOpacityStrin);
+  var pureAttr23 = /* @__PURE__ */ pureAttr(attrPath_StrokeString);
+  var pureAttr24 = /* @__PURE__ */ pureAttr(attrPath_StrokeWidthStrin);
+  var pureAttr25 = /* @__PURE__ */ pureAttr(attrPath_FilterString);
+  var pureAttr26 = /* @__PURE__ */ pureAttr(attrLinearGradient_IdStri);
+  var pureAttr27 = /* @__PURE__ */ pureAttr(attrLinearGradient_Gradie);
   var keepLatest5 = /* @__PURE__ */ keepLatest(eventIsEvent);
-  var pureAttr23 = /* @__PURE__ */ pureAttr(attrStop_OffsetString);
-  var pureAttr24 = /* @__PURE__ */ pureAttr(attrStop_StopColorString);
-  var pureAttr25 = /* @__PURE__ */ pureAttr(attrStop_StopOpacityStrin);
+  var pureAttr28 = /* @__PURE__ */ pureAttr(attrStop_OffsetString);
+  var pureAttr29 = /* @__PURE__ */ pureAttr(attrStop_StopColorString);
+  var pureAttr30 = /* @__PURE__ */ pureAttr(attrStop_StopOpacityStrin);
   var attr12 = /* @__PURE__ */ attr(attrG_TransformString);
   var show1 = /* @__PURE__ */ show(showInt);
-  var pureAttr26 = /* @__PURE__ */ pureAttr(attrPath_DString);
+  var pureAttr31 = /* @__PURE__ */ pureAttr(attrPath_DString);
   var unskew = function(v) {
     return v * sqrt(3);
+  };
+  var unsafeMemoize = function(e) {
+    return unsafePerformEffect(function __do2() {
+      var v = create();
+      $$void11(subscribe(e)(v.push))();
+      return v.event;
+    });
   };
   var toPath = /* @__PURE__ */ foldMapWithIndex2(monoidString)(function(i2) {
     return function(v) {
       return function() {
-        var $179 = i2 === 0;
-        if ($179) {
+        var $198 = i2 === 0;
+        if ($198) {
           return "M";
         }
         ;
@@ -10398,16 +10483,16 @@
     };
   });
   var timbre = /* @__PURE__ */ function() {
-    var $257 = fromMaybe([]);
-    var $258 = maximumBy2(on(compare3)(sum2));
-    return function($259) {
-      return $257($258($259));
+    var $278 = fromMaybe([]);
+    var $279 = maximumBy2(on(compare3)(sum2));
+    return function($280) {
+      return $278($279($280));
     };
   }();
   var takeNormOr = function(atLeast) {
-    return function(norm) {
+    return function(norm1) {
       return function(as) {
-        return take(max6(atLeast)(floor2(toNumber(length(as)) * norm)))(as);
+        return take(max6(atLeast)(floor2(toNumber(length(as)) * norm1)))(as);
       };
     };
   };
@@ -10426,8 +10511,8 @@
         ;
         var mk = function(len) {
           return function(mapper) {
-            return mapWithIndex4(function($261) {
-              return $$const(mapper($261));
+            return mapWithIndex4(function($282) {
+              return $$const(mapper($282));
             })(replicate(len)(unit));
           };
         };
@@ -10551,6 +10636,14 @@
     ;
     return "??";
   };
+  var norm = function(values2) {
+    var total = sum2(values2);
+    return mapWithIndex4(function(i2) {
+      return function(v) {
+        return new Tuple(sum2(take(i2)(values2)) / total, v / total);
+      };
+    })(values2);
+  };
   var mknote = function(i2) {
     return 55 * pow2(2)(i2 / 12);
   };
@@ -10582,9 +10675,9 @@
     };
   };
   var guessNote = /* @__PURE__ */ function() {
-    var $262 = maximumBy2(on(compare3)(snd));
-    var $263 = mapWithIndex4(Tuple.create);
-    return function($264) {
+    var $283 = maximumBy2(on(compare3)(snd));
+    var $284 = mapWithIndex4(Tuple.create);
+    return function($285) {
       return function(v) {
         if (v instanceof Nothing) {
           return "?";
@@ -10595,15 +10688,15 @@
         }
         ;
         throw new Error("Failed pattern match at Main (line 205, column 69 - line 207, column 33): " + [v.constructor.name]);
-      }($262($263($264)));
+      }($283($284($285)));
     };
   }();
   var gatherOctaves = function(allOctaves) {
     return mapFlipped3(octave)(function(i2) {
       return map15(snd)(filter(function() {
-        var $265 = eq3(i2);
-        return function($266) {
-          return $265(fst($266));
+        var $286 = eq3(i2);
+        return function($287) {
+          return $286(fst($287));
         };
       }())(allOctaves));
     });
@@ -10637,7 +10730,7 @@
     var filterMap1 = filterMap(dictIsEvent.Filterable1());
     return function(dictEq) {
       var notEq2 = notEq(dictEq);
-      var $267 = filterMap1(function(v) {
+      var $288 = filterMap1(function(v) {
         if (v.last instanceof Nothing) {
           return new Just(v.now);
         }
@@ -10655,15 +10748,17 @@
         ;
         throw new Error("Failed pattern match at Main (line 124, column 44 - line 128, column 27): " + [v.constructor.name]);
       });
-      return function($268) {
-        return $267(withLast2($268));
+      return function($289) {
+        return $288(withLast2($289));
       };
     };
   };
   var dedup1 = /* @__PURE__ */ dedup(eventIsEvent);
   var dedup2 = /* @__PURE__ */ dedup1(/* @__PURE__ */ eqArray(uintEqInstance));
-  var dedup3 = /* @__PURE__ */ dedup1(/* @__PURE__ */ eqArray(/* @__PURE__ */ eqTuple(eqNumber)(eqNumber)));
-  var dedup4 = /* @__PURE__ */ dedup1(eqString);
+  var dedup3 = /* @__PURE__ */ dedup1(/* @__PURE__ */ eqArray(eqTuple2));
+  var dedup4 = /* @__PURE__ */ dedup1(eqNumber);
+  var dedup5 = /* @__PURE__ */ dedup1(eqTuple2);
+  var dedup6 = /* @__PURE__ */ dedup1(eqString);
   var binnote = function(i2) {
     return {
       center: mknote(toNumber(i2)),
@@ -10693,17 +10788,17 @@
       return map15(sum2)(noteScores$prime(ab)(fft));
     };
   };
-  var main2 = /* @__PURE__ */ launchAff_(/* @__PURE__ */ bind6(/* @__PURE__ */ liftEffect3(create))(function(v) {
-    return bind6(context3)(function(ctx) {
-      return bind6(decodeAudioDataFromUri(ctx)("samples/pizzs1.wav"))(function(pizzs1) {
-        return bind6(decodeAudioDataFromUri(ctx)("samples/main0.wav"))(function(main0) {
-          return discard3(log4(main0))(function() {
+  var main2 = /* @__PURE__ */ launchAff_(/* @__PURE__ */ bind12(/* @__PURE__ */ liftEffect3(create))(function(v) {
+    return bind12(context3)(function(ctx) {
+      return bind12(decodeAudioDataFromUri(ctx)("samples/pizzs1.wav"))(function(pizzs1) {
+        return bind12(decodeAudioDataFromUri(ctx)("samples/main0.wav"))(function(main0) {
+          return discard22(log4(main0))(function() {
             var rotating = mapFlipped1(map24(function(v1) {
               return v1.time;
-            })(withTime(animationFrame)))(function($269) {
+            })(withTime(animationFrame)))(function($290) {
               return function(t) {
                 return t / 1e3 * 120;
-              }(unwrap5(unInstant($269)));
+              }(unwrap5(unInstant($290)));
             });
             var radius = 100 / 2;
             var line2 = function(v1) {
@@ -10732,15 +10827,15 @@
               };
             };
             var drawArms = function() {
-              var $270 = foldMapWithIndex1(function(i2) {
+              var $291 = foldMapWithIndex1(function(i2) {
                 return drawArm(incr(i2)(60));
               });
-              return function($271) {
-                return toPath($270($271));
+              return function($292) {
+                return toPath($291($292));
               };
             }();
-            return bind6(liftEffect3(create))(function(analyserE) {
-              return bind6(liftEffect3(create))(function(sampleNorm) {
+            return bind12(liftEffect3(create))(function(analyserE) {
+              return bind12(liftEffect3(create))(function(sampleNorm) {
                 var analyserB = behavior(function(e) {
                   return filterMap2(identity13)(sampleOnRight3(analyserE.event)(mapFlipped1(e)(function(sample2) {
                     return map32(function(analyser2) {
@@ -10748,85 +10843,112 @@
                     });
                   })));
                 });
-                var sampled = map24(map15(toNumber2))(dedup2(sample_2(analyserB)(animationFrame)));
-                var currentNoteScores = mapFlipped1(sampled)(noteScores(main0));
-                var currentNoteScores$prime = mapFlipped1(sampled)(noteScores$prime(main0));
-                var currentTimbre = mapFlipped1(currentNoteScores$prime)(timbre);
-                var sampleNormed = dedup3(lift23(takeNormOr(6 * 9 | 0))(alt9(sampleNorm.event)(pure8(1)))(alt9(map24(mapWithNorm(Tuple.create))(sampled))(pure8([new Tuple(0, 0)]))));
-                return liftEffect3(runInBody(div_(join1(replicate(1)([p_([text_("Click on the large snowflake to start the music!")]), p_([text_("(iPhone/iPad users: turn on your ringer to hear sound.)")]), p_([text_("This slider clips the higher frequencies from the snowflake FFT display (right = all frequencies, left = just the bottom 6 arms*9 tines worth of bins):")]), flip(input)([])(oneOf5([pureAttr4(Xtype.value)("range"), pureAttr5(Min2.value)("0.0"), pureAttr6(Max2.value)("1.0"), pureAttr7(Step.value)("any"), pureAttr8(Value.value)("1.0"), slider_(sampleNorm.push)])), div2(pureAttr9(Class.value)("bars"))(mapFlipped3(octave)(function(i2) {
-                  var height8 = filterMap2(function(scores) {
+                var sampled = unsafeMemoize(map24(map15(toNumber2))(dedup2(sample_2(analyserB)(animationFrame))));
+                var currentNoteScores = unsafeMemoize(mapFlipped1(sampled)(noteScores(main0)));
+                var currentNoteScores$prime = unsafeMemoize(mapFlipped1(sampled)(noteScores$prime(main0)));
+                var currentTimbre = unsafeMemoize(mapFlipped1(currentNoteScores$prime)(function($293) {
+                  return norm(timbre($293));
+                }));
+                var sampleNormed = dedup3(lift23(takeNormOr(6 * 9 | 0))(alt9(sampleNorm.event)(pure15(1)))(alt9(map24(mapWithNorm(Tuple.create))(sampled))(pure15([new Tuple(0, 0)]))));
+                return liftEffect3(runInBody(div_(join1(replicate(1)([p_([text_("Click on the large snowflake to start the music!")]), p_([text_("(iPhone/iPad users: turn on your ringer to hear sound.)")]), p_([text_("This slider clips the higher frequencies from the snowflake FFT display (right = all frequencies, left = just the bottom 6 arms*9 tines worth of bins):")]), flip(input)([])(oneOf5([pureAttr4(Xtype.value)("range"), pureAttr5(Min2.value)("0.0"), pureAttr6(Max2.value)("1.0"), pureAttr7(Step.value)("any"), pureAttr8(Value.value)("1.0"), slider_(sampleNorm.push)])), svg(oneOf5([pureAttr9(Width.value)(show4(240)), pureAttr10(Height.value)(show4(240)), pureAttr11(Fill.value)("green"), pureAttr12(Style.value)("display:block")]))(mapFlipped3(octave)(function(i2) {
+                  var height8 = dedup4(filterMap2(function(scores) {
                     return mapFlipped22(index(scores)(i2))(function(score) {
-                      return "height:" + (show4(score / 100) + "px");
+                      return round(score / 100);
                     });
-                  })(currentNoteScores);
-                  return div2(mapAttr1(Style.value)(height8))([]);
-                })), div2(pureAttr9(Class.value)("divvy"))(mapFlipped3(octave)(function(i2) {
-                  var width8 = mapFlipped1(currentTimbre)(function(scores) {
-                    return function(score) {
-                      return "flex-grow:" + show4(score);
-                    }(fromMaybe(0)(index(scores)(i2)));
-                  });
-                  return div2(mapAttr1(Style.value)(width8))([]);
-                })), h1_([text(alt9(pure8("..."))(dedup4(map24(guessNote)(currentNoteScores))))]), br_([]), br_([]), br_([]), svg(oneOf5([pureAttr10(Width.value)(show4(5 + 2 * 100 + 5)), pureAttr11(Height.value)(show4(5 + 2 * 100 + 5)), pureAttr12(ViewBox.value)(maybe(mempty5)(intercalateMap2(" ")(show4))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5]))), mapFlipped1(alt9(pure8(Nothing.value))(v.event))(function(e) {
+                  })(currentNoteScores));
+                  return flip(rect)([])(oneOf5([pureAttr13(Width.value)(show4(20)), pureAttr14(X.value)(show4(toNumber(i2) * 20)), mapAttr1(Height.value)(map24(show4)(height8)), mapAttr22(Y.value)(map24(function($294) {
+                    return show4(function(v1) {
+                      return 240 - v1;
+                    }($294));
+                  })(height8))]));
+                })), svg(oneOf5([pureAttr9(Width.value)(show4(240)), pureAttr10(Height.value)(show4(20)), pureAttr12(Style.value)("display:block")]))(mapFlipped3(octave)(function(i2) {
+                  var info2 = dedup5(mapFlipped1(currentTimbre)(function() {
+                    var $295 = join2(bimap2)(function(v1) {
+                      return v1 * 240;
+                    });
+                    var $296 = fromMaybe(new Tuple(0, 0));
+                    var $297 = flip(index)(i2);
+                    return function($298) {
+                      return $295($296($297($298)));
+                    };
+                  }()));
+                  return flip(rect)([])(oneOf5([pureAttr15(Height.value)(show4(20)), mapAttr3(X.value)(map24(function($299) {
+                    return show4(fst($299));
+                  })(info2)), mapAttr4(Width.value)(map24(function($300) {
+                    return show4(snd($300));
+                  })(info2)), pureAttr16(Fill.value)(function() {
+                    var $264 = i2 === 0;
+                    if ($264) {
+                      return "red";
+                    }
+                    ;
+                    var $265 = mod3(i2)(2) === 0;
+                    if ($265) {
+                      return "blue";
+                    }
+                    ;
+                    return "gray";
+                  }())]));
+                })), h1_([text(alt9(pure15("..."))(dedup6(map24(guessNote)(currentNoteScores))))]), br_([]), br_([]), br_([]), svg(oneOf5([pureAttr9(Width.value)(show4(5 + 2 * 100 + 5)), pureAttr10(Height.value)(show4(5 + 2 * 100 + 5)), pureAttr17(ViewBox.value)(maybe(mempty5)(intercalateMap2(" ")(show4))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5]))), mapFlipped1(alt9(pure15(Nothing.value))(v.event))(function(e) {
                   return attr3(OnClick.value)(function() {
                     if (e instanceof Just) {
                       return applySecond4(e.value0)(v.push(Nothing.value));
                     }
                     ;
                     return function __do2() {
-                      var $272 = run2_([analyser_2({
+                      var $301 = run2_([analyser_2({
                         cb: function(v1) {
                           return voidRight3(analyserE.push(Nothing.value))(analyserE.push(new Just(v1)));
                         },
                         fftSize: TTT12.value
                       })(flip($$const)([gain_2(0.15)([sinOsc2(440)(bangOn2)])])([playBuf2(main0)(bangOn2)]))])();
-                      return v.push(Just.create($272))();
+                      return v.push(Just.create($301))();
                     };
                   }());
-                })]))([g(oneOf5([pureAttr13(Fill.value)("#bfe6ff"), pureAttr14(StrokeLinecap.value)("butt"), pureAttr15(StrokeLinejoin.value)("miter"), pureAttr16(StrokeOpacity.value)("1")]))(join1([pure15(flip(path)([])(oneOf5([mapAttr22(D.value)(dedup4(mapFlipped1(alt9(pure8([new Tuple(0, 0)]))(sampleNormed))(function(freqs) {
+                })]))([g(oneOf5([pureAttr18(Fill.value)("#bfe6ff"), pureAttr19(StrokeLinecap.value)("butt"), pureAttr20(StrokeLinejoin.value)("miter"), pureAttr21(StrokeOpacity.value)("1")]))(join1([pure24(flip(path)([])(oneOf5([mapAttr5(D.value)(dedup6(mapFlipped1(alt9(pure15([new Tuple(0, 0)]))(sampleNormed))(function(freqs) {
                   var segmented = segment(6)(9)(mapFlipped3(freqs)(uncurry(function(i2) {
                     return function(v1) {
                       return v1 / (32 - i2 * 24);
                     };
                   })));
                   return drawArms(distr(join2(Tuple.create)(segmented)));
-                }))), pureAttr17(FillOpacity.value)(".91"), pureAttr18(Stroke.value)(function() {
+                }))), pureAttr222(FillOpacity.value)(".91"), pureAttr23(Stroke.value)(function() {
                   if (false) {
                     return "url(#linearGradientArm)";
                   }
                   ;
                   return "none";
-                }()), pureAttr19(StrokeWidth.value)("0.6"), pureAttr20(Filter.value)(function() {
+                }()), pureAttr24(StrokeWidth.value)("0.6"), pureAttr25(Filter.value)(function() {
                   if (false) {
                     return "url(#filter17837)";
                   }
                   ;
                   return "none";
-                }())])))]))]), svg(oneOf5([pureAttr10(Width.value)(show4(5 + 100 + 5)), pureAttr11(Height.value)(show4(5 + 100 + 5)), pureAttr12(ViewBox.value)(maybe(mempty5)(intercalateMap2(" ")(show4))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5]))), mapFlipped1(alt9(pure8(Nothing.value))(v.event))(function(e) {
+                }())])))]))]), svg(oneOf5([pureAttr9(Width.value)(show4(5 + 100 + 5)), pureAttr10(Height.value)(show4(5 + 100 + 5)), pureAttr17(ViewBox.value)(maybe(mempty5)(intercalateMap2(" ")(show4))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5]))), mapFlipped1(alt9(pure15(Nothing.value))(v.event))(function(e) {
                   return attr3(OnClick.value)(function() {
                     if (e instanceof Just) {
                       return applySecond4(e.value0)(v.push(Nothing.value));
                     }
                     ;
                     return function __do2() {
-                      var $273 = run2_([analyser_2({
+                      var $302 = run2_([analyser_2({
                         cb: function(v1) {
                           return voidRight3(analyserE.push(Nothing.value))(analyserE.push(new Just(v1)));
                         },
                         fftSize: TTT8.value
                       })([playBuf2(pizzs1)(bangOn2)])])();
-                      return v.push(Just.create($273))();
+                      return v.push(Just.create($302))();
                     };
                   }());
-                })]))([defs_([linearGradient(oneOf5([pureAttr21(Id.value)("linearGradientArm"), pureAttr222(GradientUnits.value)("userSpaceOnUse"), keepLatest5(mapFlipped1(function() {
+                })]))([defs_([linearGradient(oneOf5([pureAttr26(Id.value)("linearGradientArm"), pureAttr27(GradientUnits.value)("userSpaceOnUse"), keepLatest5(mapFlipped1(function() {
                   if (false) {
                     return rotating;
                   }
                   ;
-                  return pure8(0);
+                  return pure15(0);
                 }())(function(angle) {
                   return line2(rotate(angle)(new Tuple(0, radius)))(rotate(angle)(new Tuple(0, -radius)));
-                }))]))([flip(stop)([])(oneOf5([pureAttr23(Offset.value)("0"), pureAttr24(StopColor.value)("#6b91ab"), pureAttr25(StopOpacity.value)("0.9")])), flip(stop)([])(oneOf5([pureAttr23(Offset.value)("1"), pureAttr24(StopColor.value)("#f3feff"), pureAttr25(StopOpacity.value)("0.95")]))])]), g(oneOf5([pureAttr13(Fill.value)("#bfe6ff"), pureAttr14(StrokeLinecap.value)("butt"), pureAttr15(StrokeLinejoin.value)("miter"), pureAttr16(StrokeOpacity.value)("1"), mapFlipped1(rotating)(function(angle) {
+                }))]))([flip(stop)([])(oneOf5([pureAttr28(Offset.value)("0"), pureAttr29(StopColor.value)("#6b91ab"), pureAttr30(StopOpacity.value)("0.9")])), flip(stop)([])(oneOf5([pureAttr28(Offset.value)("1"), pureAttr29(StopColor.value)("#f3feff"), pureAttr30(StopOpacity.value)("0.95")]))])]), g(oneOf5([pureAttr18(Fill.value)("#bfe6ff"), pureAttr19(StrokeLinecap.value)("butt"), pureAttr20(StrokeLinejoin.value)("miter"), pureAttr21(StrokeOpacity.value)("1"), mapFlipped1(rotating)(function(angle) {
                   return attr12(Transform.value)("rotate(" + (show1(round2(remainder(angle + 30)(function() {
                     if (false) {
                       return 360;
@@ -10837,13 +10959,13 @@
                 })]))(join1(function() {
                   var vs = [1, 3, 3, 6, 4, 4, 5, 3, 1];
                   var vss = join2(Tuple.create)(vs);
-                  return [pure15(flip(path)([])(oneOf5([pureAttr26(D.value)(drawArms([vss, vss, vss, vss, vss, vss])), pureAttr17(FillOpacity.value)(".91"), pureAttr18(Stroke.value)(function() {
+                  return [pure24(flip(path)([])(oneOf5([pureAttr31(D.value)(drawArms([vss, vss, vss, vss, vss, vss])), pureAttr222(FillOpacity.value)(".91"), pureAttr23(Stroke.value)(function() {
                     if (false) {
                       return "url(#linearGradientArm)";
                     }
                     ;
                     return "none";
-                  }()), pureAttr19(StrokeWidth.value)("0.6"), pureAttr20(Filter.value)(function() {
+                  }()), pureAttr24(StrokeWidth.value)("0.6"), pureAttr25(Filter.value)(function() {
                     if (false) {
                       return "url(#filter17837)";
                     }

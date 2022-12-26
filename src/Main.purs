@@ -5,6 +5,7 @@ import Prelude
 import CSS.Color (Color)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
+import Data.Array ((!!))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.ArrayBuffer.Typed (toArray) as AB
@@ -16,16 +17,18 @@ import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
 import Data.List.Types (List(..), (:))
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap)
 import Data.NonEmpty (NonEmpty, (:|))
 import Data.Number ((%))
 import Data.Number as Math
 import Data.Semigroup.Foldable (intercalateMap)
+import Data.String.CodeUnits as CodeUnits
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.UInt as UInt
-import Deku.Attribute ((!:=), (:=))
+import Deku.Attribute ((!:=), (:=), (<:=>))
 import Deku.Control as DC
+import Deku.Core (envy)
 import Deku.DOM as D
 import Deku.Listeners (slider_)
 import Deku.Toplevel as Deku
@@ -59,6 +62,9 @@ rotate degrees (Tuple x y) =
     c = Math.cos rad
     s = Math.sin rad
   in Tuple (c * x + s * y) (c * y - s * x)
+
+roundDec :: Number -> String
+roundDec v = CodeUnits.take 6 (show (Math.round (v * 100.0) / 100.0))
 
 toPath :: Array (Tuple Number Number) -> String
 toPath = foldMapWithIndex \i (Tuple x y) ->
@@ -114,7 +120,12 @@ interpArray (x :| y : _) i | i <= 1.0 = interp x y (max 0.0 i)
 interpArray (x :| Nil) _ = x
 interpArray (_ :| y : zs) i = interpArray (y :| zs) (i - 1.0)
 
-
+dedup :: forall f a. Event.IsEvent f => Eq a => f a -> f a
+dedup = Event.withLast >>> Event.filterMap case _ of
+  { last: Nothing, now } -> Just now
+  { last: Just last, now }
+    | last /= now -> Just now
+    | otherwise -> Nothing
 
 
 mkfreq :: BrowserAudioBuffer -> Number -> Number
@@ -175,11 +186,11 @@ maxOctave = Int.floor (Math.log (44100.0 / 110.0) / Math.log 2.0)
 noteOctaves :: Array (Tuple Int Bin)
 noteOctaves = Array.replicate (12 * maxOctave) unit # mapWithIndex \i _ -> Tuple (i `mod` 12) (binnote i)
 
-gatherOctaves :: Array (Tuple Int Number) -> Array Number
-gatherOctaves allOctaves = map sum $ octave <#> \i ->
+gatherOctaves :: Array (Tuple Int Number) -> Array (Array Number)
+gatherOctaves allOctaves = octave <#> \i ->
   snd <$> Array.filter (fst >>> eq i) allOctaves
 
-noteScores' :: BrowserAudioBuffer -> Array Number -> Array Number
+noteScores' :: BrowserAudioBuffer -> Array Number -> Array (Array Number)
 noteScores' ab fft = gatherOctaves
   let
     binned = freqBins ab fft
@@ -188,27 +199,32 @@ noteScores' ab fft = gatherOctaves
       matchingFreq octaveBin binned
 
 noteScores :: BrowserAudioBuffer -> Array Number -> Array Number
-noteScores ab fft = noteScores' ab fft
+noteScores ab fft = sum <$> noteScores' ab fft
 
 guessNote :: Array Number -> String
 guessNote = mapWithIndex Tuple >>> maximumBy (compare `on` snd) >>> case _ of
   Nothing -> "?"
-  Just (Tuple i _) ->
-    case i of
-      0 -> "A"
-      1 -> "Bb"
-      2 -> "B"
-      3 -> "C"
-      4 -> "C#"
-      5 -> "D"
-      6 -> "D#"
-      7 -> "E"
-      8 -> "F"
-      9 -> "F#"
-      10 -> "G"
-      11 -> "G#"
-      _ -> "??"
+  Just (Tuple i _) -> noteName i
 
+noteName :: Int -> String
+noteName =
+  case _ of
+    0 -> "A"
+    1 -> "Bb"
+    2 -> "B"
+    3 -> "C"
+    4 -> "C#"
+    5 -> "D"
+    6 -> "D#"
+    7 -> "E"
+    8 -> "F"
+    9 -> "F#"
+    10 -> "G"
+    11 -> "G#"
+    _ -> "??"
+
+timbre :: Array (Array Number) -> Array Number
+timbre = maximumBy (compare `on` sum) >>> fromMaybe []
 
 mapWithNorm :: forall a b. (Number -> a -> b) -> Array a -> Array b
 mapWithNorm f as = as # mapWithIndex \i -> f (Int.toNumber i / Int.toNumber (Array.length as))
@@ -229,15 +245,6 @@ main = launchAff_ do
   pizzs1 <- decodeAudioDataFromUri ctx "samples/pizzs1.wav"
   main0 <- decodeAudioDataFromUri ctx "samples/main0.wav"
   log (unsafeCoerce main0)
-  -- Biased to the high notes in the scale??
-  {-
-  let fakefft = Array.replicate (1024) 1.0
-  logShow (noteScores' main0 fakefft)
-  logShow $ noteOctaves <#> map \octaveBin ->
-    freqBins main0 fakefft <#> \(Tuple fbin _) ->
-      overlap octaveBin fbin
-  logShow $ freqBins main0 fakefft
-  -}
 
   let
     size = 100.0
@@ -297,8 +304,12 @@ main = launchAff_ do
         sampleOnRight analyserE.event $ e <#> \sample ->
           map \analyser ->
             sample $ unsafePerformEffect $ AB.toArray =<< getByteFrequencyData analyser
-    sampled = mapWithNorm Tuple <<< map UInt.toNumber <$> Behavior.sample_ analyserB animationFrame
-    sampleNormed = lift2 (takeNormOr (6*9)) (sampleNorm.event <|> pure 1.0) sampled
+    sampled = map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
+    sampleNormed = dedup $ lift2 (takeNormOr (6*9)) (sampleNorm.event <|> pure 1.0) (mapWithNorm Tuple <$> sampled <|> pure [Tuple 0.0 0.0])
+    currentNoteScores = sampled <#> noteScores main0
+    currentNoteScores' = sampled <#> noteScores' main0
+    currentTimbre = currentNoteScores' <#> timbre
+
 
   liftEffect $ Deku.runInBody do
     D.div_ $ join $ Array.replicate 1
@@ -313,7 +324,23 @@ main = launchAff_ do
         , D.Value !:= "1.0"
         , slider_ sampleNorm.push
         ]
-      , D.h1_ [ DC.text $ map guessNote $ sampled <#> map snd >>> noteScores main0 ]
+      , D.div (D.Class !:= "bars") $
+          octave <#> \i ->
+            let
+              height :: Event.Event String
+              height = currentNoteScores # Event.filterMap \scores ->
+                (scores !! i) <#> \score ->
+                  "height:" <> show (score / 100.0) <> "px"
+            in D.div (D.Style <:=> height) []
+      , D.div (D.Class !:= "divvy") $
+          octave <#> \i ->
+            let
+              width :: Event.Event String
+              width = currentTimbre <#> \scores ->
+                fromMaybe 0.0 (scores !! i) # \score ->
+                  "flex-grow:" <> show (score)
+            in D.div (D.Style <:=> width) []
+      , D.h1_ [ DC.text $ pure "..." <|> dedup (guessNote <$> currentNoteScores) ]
       , D.br_ []
       --, DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> map snd >>> noteScores main0
       , D.br_ []
@@ -340,10 +367,11 @@ main = launchAff_ do
               ]
             ) $ join
             [ pure $ flip D.path [] $ oneOf
-                [ (pure [Tuple 0.0 0.0] <|> sampleNormed) <#> \freqs ->
-                    let
-                      segmented = segment 6 9 $ freqs <#> uncurry \i -> (_ / (32.0 - i * 24.0))
-                    in D.D := drawArms (distr (join Tuple segmented))
+                [ D.D <:=> do
+                    dedup $ (pure [Tuple 0.0 0.0] <|> sampleNormed) <#> \freqs ->
+                      let
+                        segmented = segment 6 9 $ freqs <#> uncurry \i -> (_ / (32.0 - i * 24.0))
+                      in drawArms (distr (join Tuple segmented))
                 , D.FillOpacity !:= ".91"
                 , D.Stroke !:= if useStroke then "url(#linearGradientArm)" else "none"
                 , D.StrokeWidth !:= "0.6"

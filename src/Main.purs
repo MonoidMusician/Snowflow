@@ -6,7 +6,6 @@ import CSS.Color (Color)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Data.Array as Array
-import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.ArrayBuffer.Typed (toArray) as AB
 import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
@@ -16,16 +15,15 @@ import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
-import Data.List.Types (List(..), NonEmptyList(..), (:))
+import Data.List.Types (List(..), (:))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (unwrap)
-import Data.NonEmpty (NonEmpty(..), (:|))
+import Data.NonEmpty (NonEmpty, (:|))
 import Data.Number ((%))
 import Data.Number as Math
 import Data.Semigroup.Foldable (intercalateMap)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.UInt as UInt
-import Debug (spy)
 import Deku.Attribute ((!:=), (:=))
 import Deku.Control as DC
 import Deku.DOM as D
@@ -34,14 +32,13 @@ import Deku.Toplevel as Deku
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
-import Effect.Class.Console (log, logShow)
+import Effect.Class.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior as Behavior
 import FRP.Event (keepLatest, sampleOnRight)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
-import FRP.Event.Class (sampleOnLeft_)
-import FRP.Event.Time (interval, withTime)
+import FRP.Event.Time (withTime)
 import Ocarina.Control as Oc
 import Ocarina.Core (Po2(..), bangOn)
 import Ocarina.Interpret (context, decodeAudioDataFromUri, getByteFrequencyData, bufferSampleRate)
@@ -123,18 +120,23 @@ interpArray (_ :| y : zs) i = interpArray (y :| zs) (i - 1.0)
 mkfreq :: BrowserAudioBuffer -> Number -> Number
 mkfreq ab idxNorm = (bufferSampleRate ab / 2.0) * idxNorm
 
-freqBin :: BrowserAudioBuffer -> Number -> Bin
-freqBin ab idxNorm =
-  { center: mkfreq ab (idxNorm + 0.5)
-  , low: mkfreq ab idxNorm
-  , high: mkfreq ab (idxNorm + 0.1)
-  }
+freqBins :: forall a. BrowserAudioBuffer -> Array a -> Array (Tuple Bin a)
+freqBins ab binData =
+  let
+    up = Int.toNumber
+    len = up $ Array.length binData
+  in
+    binData # mapWithIndex \i -> Tuple
+      { center: mkfreq ab ((up i + 0.5) / len)
+      , low: mkfreq ab ((up i + 0.0) / len)
+      , high: mkfreq ab ((up i + 1.0) / len)
+      }
 
 halfstep :: Number
 halfstep = Math.pow 2.0 (1.0/12.0)
 
 mknote :: Number -> Number
-mknote i = 440.0 * Math.pow 2.0 (i / 12.0)
+mknote i = 55.0 * Math.pow 2.0 (i / 12.0)
 
 binnote :: Int -> Bin
 binnote i =
@@ -155,42 +157,38 @@ octave = Array.replicate 12 unit # mapWithIndex \i _ -> i
 -- TODO
 overlap :: Bin -> Bin -> Number
 overlap target sample
-  | target.low <= sample.low
-  , target.high >= sample.high
-    = 1.0
   | target.high < sample.low = 0.0
   | target.low > sample.high = 0.0
   | otherwise =
     let
       missingTop = max 0.0 $ sample.high - target.high
       missingBottom = max 0.0 $ target.low - sample.low
-    in 1.0 - (missingTop + missingBottom) / (sample.high - sample.low)
+      frac = 1.0 - (missingTop + missingBottom) / (sample.high - sample.low)
+    in frac
 
 matchingFreq :: Bin -> Array (Tuple Bin Number) -> Number
 matchingFreq freq binned = sum $ binned <#> \(Tuple bin amp) -> amp * overlap freq bin
 
 maxOctave :: Int
-maxOctave = Int.floor (Math.log (44100.0 / 880.0) / Math.log 2.0)
+maxOctave = Int.floor (Math.log (44100.0 / 110.0) / Math.log 2.0)
 
 noteOctaves :: Array (Tuple Int Bin)
 noteOctaves = Array.replicate (12 * maxOctave) unit # mapWithIndex \i _ -> Tuple (i `mod` 12) (binnote i)
 
 gatherOctaves :: Array (Tuple Int Number) -> Array Number
-gatherOctaves allOctaves = octave <#> \i ->
-  sum $ snd <$> Array.filter (fst >>> eq i) allOctaves
+gatherOctaves allOctaves = map sum $ octave <#> \i ->
+  snd <$> Array.filter (fst >>> eq i) allOctaves
 
-noteScores' :: BrowserAudioBuffer -> Array (Tuple Number Number) -> Array Number
+noteScores' :: BrowserAudioBuffer -> Array Number -> Array Number
 noteScores' ab fft = gatherOctaves
   let
-    binned = map (lmap (freqBin ab)) fft
+    binned = freqBins ab fft
   in
     noteOctaves <#> map \octaveBin ->
       matchingFreq octaveBin binned
 
-noteScores :: BrowserAudioBuffer -> Array (Tuple Number Number) -> Array Number
+noteScores :: BrowserAudioBuffer -> Array Number -> Array Number
 noteScores ab fft = noteScores' ab fft
-noteScores ab fft =
-  Array.zipWith (/) (noteScores' ab fft) (noteScores' ab $ fft <#> \t -> t $> 1.0)
 
 guessNote :: Array Number -> String
 guessNote = mapWithIndex Tuple >>> maximumBy (compare `on` snd) >>> case _ of
@@ -221,6 +219,9 @@ takeNorm norm as = Array.take (Int.floor (Int.toNumber (Array.length as) * norm)
 takeNormOr :: forall a. Int -> Number -> Array a -> Array a
 takeNormOr atLeast norm as = Array.take (max atLeast (Int.floor (Int.toNumber (Array.length as) * norm))) as
 
+
+
+
 main :: Effect Unit
 main = launchAff_ do
   { event, push } <- liftEffect Event.create
@@ -229,7 +230,14 @@ main = launchAff_ do
   main0 <- decodeAudioDataFromUri ctx "samples/main0.wav"
   log (unsafeCoerce main0)
   -- Biased to the high notes in the scale??
-  logShow (noteScores' main0 (mapWithNorm Tuple $ Array.replicate (8*1024) 1.0))
+  {-
+  let fakefft = Array.replicate (1024) 1.0
+  logShow (noteScores' main0 fakefft)
+  logShow $ noteOctaves <#> map \octaveBin ->
+    freqBins main0 fakefft <#> \(Tuple fbin _) ->
+      overlap octaveBin fbin
+  logShow $ freqBins main0 fakefft
+  -}
 
   let
     size = 100.0
@@ -302,11 +310,11 @@ main = launchAff_ do
         , D.Value !:= "1.0"
         , slider_ sampleNorm.push
         ]
-      , DC.text $ map guessNote $ (sampleOnLeft_ (interval 250) sampled) <#> noteScores main0
+      , D.h1_ [ DC.text $ map guessNote $ sampled <#> map snd >>> noteScores main0 ]
       , D.br_ []
-      , DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> noteScores main0
+      --, DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> map snd >>> noteScores main0
       , D.br_ []
-      , DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> map snd
+      --, DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> map snd
       , D.br_ []
       , D.svg
           (oneOf
@@ -316,7 +324,7 @@ main = launchAff_ do
             , (pure Nothing <|> event) <#> \e ->
                 D.OnClick := case e of
                   Just x -> x *> push Nothing
-                  _ -> run2_ [ Oc.analyser_ { cb: AnalyserNodeCb \v -> analyserE.push Nothing <$ analyserE.push (Just v), fftSize: TTT13 } $ [ Oc.playBuf main0 bangOn ] ]
+                  _ -> run2_ [ Oc.analyser_ { cb: AnalyserNodeCb \v -> analyserE.push Nothing <$ analyserE.push (Just v), fftSize: TTT12 } $ flip const [ Oc.gain_ 0.15 [ Oc.sinOsc 440.0 bangOn ] ] [ Oc.playBuf main0 bangOn ] ]
                          >>= Just >>> push
             ]
           )

@@ -4994,6 +4994,9 @@
     };
     return new Element$prime(go2);
   };
+  var text_ = function(txt) {
+    return text(pure4(txt));
+  };
   var portalFlatten = function() {
     return {
       doLogic: function(pos) {
@@ -5695,27 +5698,36 @@
     };
   };
 
-  // output/Deku.DOM.Elt.Path/index.js
+  // output/Deku.DOM.Elt.P/index.js
   var coerce10 = /* @__PURE__ */ coerce();
+  var p = function(attributes) {
+    return function(kids) {
+      return new Element$prime(elementify("p")(attributes)(coerce10(fixed(coerce10(mapWithIndex(unsafeSetPos)(kids))))));
+    };
+  };
+  var p_ = /* @__PURE__ */ p(/* @__PURE__ */ empty(plusEvent));
+
+  // output/Deku.DOM.Elt.Path/index.js
+  var coerce11 = /* @__PURE__ */ coerce();
   var path = function(attributes) {
     return function(kids) {
-      return new Element$prime(elementify("path")(attributes)(coerce10(fixed(coerce10(mapWithIndex(unsafeSetPos)(kids))))));
+      return new Element$prime(elementify("path")(attributes)(coerce11(fixed(coerce11(mapWithIndex(unsafeSetPos)(kids))))));
     };
   };
 
   // output/Deku.DOM.Elt.Stop/index.js
-  var coerce11 = /* @__PURE__ */ coerce();
+  var coerce12 = /* @__PURE__ */ coerce();
   var stop = function(attributes) {
     return function(kids) {
-      return new Element$prime(elementify("stop")(attributes)(coerce11(fixed(coerce11(mapWithIndex(unsafeSetPos)(kids))))));
+      return new Element$prime(elementify("stop")(attributes)(coerce12(fixed(coerce12(mapWithIndex(unsafeSetPos)(kids))))));
     };
   };
 
   // output/Deku.DOM.Elt.Svg/index.js
-  var coerce12 = /* @__PURE__ */ coerce();
+  var coerce13 = /* @__PURE__ */ coerce();
   var svg = function(attributes) {
     return function(kids) {
-      return new Element$prime(elementify("svg")(attributes)(coerce12(fixed(coerce12(mapWithIndex(unsafeSetPos)(kids))))));
+      return new Element$prime(elementify("svg")(attributes)(coerce13(fixed(coerce13(mapWithIndex(unsafeSetPos)(kids))))));
     };
   };
 
@@ -9974,12 +9986,12 @@
       });
     };
   };
-  var coerce13 = function(fn) {
+  var coerce14 = function(fn) {
     return either(function(v) {
       return error("Promise failed, couldn't extract JS Error or String");
     })(identity11)(runExcept(alt8(unsafeReadTagged2("Error")(fn))(map13(error)(readString2(fn)))));
   };
-  var toAff = /* @__PURE__ */ toAff$prime(coerce13);
+  var toAff = /* @__PURE__ */ toAff$prime(coerce14);
   var toAffE = function(f) {
     return bind5(liftEffect2(f))(toAff);
   };
@@ -10540,7 +10552,7 @@
                   };
                 }())(sample_2(analyserB)(animationFrame));
                 var sampleNormed = lift23(takeNormOr(6 * 9 | 0))(alt9(sampleNorm.event)(pure8(1)))(sampled);
-                return liftEffect3(runInBody(div_(join1(replicate(1)([flip(input)([])(oneOf5([pureAttr4(Xtype.value)("range"), pureAttr5(Min2.value)("0.0"), pureAttr6(Max2.value)("1.0"), pureAttr7(Step.value)("any"), pureAttr8(Value.value)("1.0"), slider_(sampleNorm.push)])), h1_([text(map24(guessNote)(mapFlipped1(sampled)(function() {
+                return liftEffect3(runInBody(div_(join1(replicate(1)([p_([text_("Click on the large snowflake to start the music!")]), p_([text_("(iPhone/iPad users: turn on your ringer to hear sound.)")]), p_([text_("This slider clips the higher frequencies from the snowflake FFT display (right = all frequencies, left = just the bottom 6 arms*9 tines worth of bins):")]), flip(input)([])(oneOf5([pureAttr4(Xtype.value)("range"), pureAttr5(Min2.value)("0.0"), pureAttr6(Max2.value)("1.0"), pureAttr7(Step.value)("any"), pureAttr8(Value.value)("1.0"), slider_(sampleNorm.push)])), h1_([text(map24(guessNote)(mapFlipped1(sampled)(function() {
                   var $244 = noteScores(main0);
                   var $245 = map15(snd);
                   return function($246) {

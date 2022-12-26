@@ -302,7 +302,10 @@ main = launchAff_ do
 
   liftEffect $ Deku.runInBody do
     D.div_ $ join $ Array.replicate 1
-      [ flip D.input [] $ oneOf
+      [ D.p_ [ DC.text_ "Click on the large snowflake to start the music!" ]
+      , D.p_ [ DC.text_ "(iPhone/iPad users: turn on your ringer to hear sound.)" ]
+      , D.p_ [ DC.text_ "This slider clips the higher frequencies from the snowflake FFT display (right = all frequencies, left = just the bottom 6 arms*9 tines worth of bins):" ]
+      , flip D.input [] $ oneOf
         [ D.Xtype !:= "range"
         , D.Min !:= "0.0"
         , D.Max !:= "1.0"

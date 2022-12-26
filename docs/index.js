@@ -310,6 +310,9 @@
 
   // output/Control.Bind/index.js
   var identity3 = /* @__PURE__ */ identity(categoryFn);
+  var discard = function(dict) {
+    return dict.discard;
+  };
   var bindFn = {
     bind: function(m) {
       return function(f) {
@@ -343,6 +346,11 @@
         };
       };
     };
+  };
+  var discardUnit = {
+    discard: function(dictBind) {
+      return bind(dictBind);
+    }
   };
   var join = function(dictBind) {
     var bind12 = bind(dictBind);
@@ -1601,6 +1609,11 @@
     };
     return Tuple2;
   }();
+  var uncurry = function(f) {
+    return function(v) {
+      return f(v.value0)(v.value1);
+    };
+  };
   var snd = function(v) {
     return v.value1;
   };
@@ -1627,6 +1640,13 @@
         zero: new Tuple(zero2, zero(dictSemiring1))
       };
     };
+  };
+  var functorTuple = {
+    map: function(f) {
+      return function(m) {
+        return new Tuple(m.value0, f(m.value1));
+      };
+    }
   };
 
   // output/Data.Bifunctor/index.js
@@ -5601,30 +5621,30 @@
       fn.tag = tag;
       return fn;
     }
-    function nonCanceler2(error2) {
+    function nonCanceler2(error3) {
       return new Aff2(PURE, void 0);
     }
     function runEff(eff) {
       try {
         eff();
-      } catch (error2) {
+      } catch (error3) {
         setTimeout(function() {
-          throw error2;
+          throw error3;
         }, 0);
       }
     }
     function runSync(left2, right2, eff) {
       try {
         return right2(eff());
-      } catch (error2) {
-        return left2(error2);
+      } catch (error3) {
+        return left2(error3);
       }
     }
     function runAsync(left2, eff, k) {
       try {
         return eff(k)();
-      } catch (error2) {
-        k(left2(error2))();
+      } catch (error3) {
+        k(left2(error3))();
         return nonCanceler2;
       }
     }
@@ -5719,7 +5739,7 @@
             fibers = {};
             fiberId = 0;
             count2 = 0;
-            return function(error2) {
+            return function(error3) {
               return new Aff2(SYNC, function() {
                 for (var k2 in kills) {
                   if (kills.hasOwnProperty(k2)) {
@@ -5989,7 +6009,7 @@
           };
         };
       }
-      function kill(error2, cb2) {
+      function kill(error3, cb2) {
         return function() {
           if (status === COMPLETED) {
             cb2(util.right(void 0))();
@@ -6004,18 +6024,18 @@
           })();
           switch (status) {
             case SUSPENDED:
-              interrupt = util.left(error2);
+              interrupt = util.left(error3);
               status = COMPLETED;
               step3 = interrupt;
               run3(runTick);
               break;
             case PENDING:
               if (interrupt === null) {
-                interrupt = util.left(error2);
+                interrupt = util.left(error3);
               }
               if (bracketCount === 0) {
                 if (status === PENDING) {
-                  attempts = new Aff2(CONS, new Aff2(FINALIZER, step3(error2)), attempts, interrupt);
+                  attempts = new Aff2(CONS, new Aff2(FINALIZER, step3(error3)), attempts, interrupt);
                 }
                 status = RETURN;
                 step3 = null;
@@ -6025,7 +6045,7 @@
               break;
             default:
               if (interrupt === null) {
-                interrupt = util.left(error2);
+                interrupt = util.left(error3);
               }
               if (bracketCount === 0) {
                 status = RETURN;
@@ -6076,7 +6096,7 @@
       var early = new Error("[ParAff] Early exit");
       var interrupt = null;
       var root = EMPTY;
-      function kill(error2, par2, cb3) {
+      function kill(error3, par2, cb3) {
         var step3 = par2;
         var head6 = null;
         var tail3 = null;
@@ -6090,7 +6110,7 @@
               case FORKED:
                 if (step3._3 === EMPTY) {
                   tmp = fibers[step3._1];
-                  kills2[count2++] = tmp.kill(error2, function(result) {
+                  kills2[count2++] = tmp.kill(error3, function(result) {
                     return function() {
                       count2--;
                       if (count2 === 0) {
@@ -6324,8 +6344,8 @@
           fibers[fid].run();
         }
       }
-      function cancel(error2, cb3) {
-        interrupt = util.left(error2);
+      function cancel(error3, cb3) {
+        interrupt = util.left(error3);
         var innerKills;
         for (var kid in kills) {
           if (kills.hasOwnProperty(kid)) {
@@ -6338,7 +6358,7 @@
           }
         }
         kills = null;
-        var newKills = kill(error2, root, cb3);
+        var newKills = kill(error3, root, cb3);
         return function(killError) {
           return new Aff2(ASYNC, function(killCb) {
             return function() {
@@ -7774,6 +7794,21 @@
     return $$void7(runInBody$prime(a2));
   };
 
+  // output/Effect.Console/foreign.js
+  var log2 = function(s2) {
+    return function() {
+      console.log(s2);
+    };
+  };
+
+  // output/Effect.Class.Console/index.js
+  var log3 = function(dictMonadEffect) {
+    var $51 = liftEffect(dictMonadEffect);
+    return function($52) {
+      return $51(log2($52));
+    };
+  };
+
   // output/FRP.Event.AnimationFrame/index.js
   var $runtime_lazy5 = function(name15, moduleName, init4) {
     var state4 = 0;
@@ -7858,9 +7893,9 @@
     return makeEvent(function(k) {
       return subscribe(e)(function(value12) {
         return function __do2() {
-          var time3 = now();
+          var time4 = now();
           return k({
-            time: time3,
+            time: time4,
             value: value12
           })();
         };
@@ -9873,6 +9908,8 @@
   var bind6 = /* @__PURE__ */ bind(bindAff);
   var liftEffect3 = /* @__PURE__ */ liftEffect(monadEffectAff);
   var context3 = /* @__PURE__ */ context(monadEffectAff);
+  var discard3 = /* @__PURE__ */ discard(discardUnit)(bindAff);
+  var log4 = /* @__PURE__ */ log3(monadEffectAff);
   var mapFlipped3 = /* @__PURE__ */ mapFlipped(functorEvent);
   var map16 = /* @__PURE__ */ map(functorEvent);
   var unwrap5 = /* @__PURE__ */ unwrap();
@@ -9929,6 +9966,9 @@
   var pureAttr14 = /* @__PURE__ */ pureAttr(attrG_StrokeLinejoinStrin);
   var pureAttr15 = /* @__PURE__ */ pureAttr(attrG_StrokeOpacityString);
   var pure15 = /* @__PURE__ */ pure(applicativeArray);
+  var map32 = /* @__PURE__ */ map(functorFn);
+  var map42 = /* @__PURE__ */ map(functorTuple);
+  var mapFlipped1 = /* @__PURE__ */ mapFlipped(functorArray);
   var attr12 = /* @__PURE__ */ attr(attrPath_DString);
   var pureAttr16 = /* @__PURE__ */ pureAttr(attrPath_FillOpacityStrin);
   var pureAttr17 = /* @__PURE__ */ pureAttr(attrPath_StrokeString);
@@ -9949,8 +9989,8 @@
   var toPath = /* @__PURE__ */ foldMapWithIndex2(monoidString)(function(i2) {
     return function(v) {
       return function() {
-        var $137 = i2 === 0;
-        if ($137) {
+        var $145 = i2 === 0;
+        if ($145) {
           return "M";
         }
         ;
@@ -9980,8 +10020,8 @@
         ;
         var mk = function(len) {
           return function(mapper) {
-            return mapWithIndex4(function($188) {
-              return $$const(mapper($188));
+            return mapWithIndex4(function($196) {
+              return $$const(mapper($196));
             })(replicate(len)(unit));
           };
         };
@@ -10001,7 +10041,7 @@
               return v3.value0;
             }
             ;
-            throw new Error("Failed pattern match at Main (line 92, column 17 - line 94, column 18): " + [v3.constructor.name]);
+            throw new Error("Failed pattern match at Main (line 93, column 17 - line 95, column 18): " + [v3.constructor.name]);
           };
         };
         return mk(v)(function(i2) {
@@ -10057,83 +10097,81 @@
     return bind6(context3)(function(ctx) {
       return bind6(decodeAudioDataFromUri(ctx)("samples/pizzs1.wav"))(function(pizzs1) {
         return bind6(decodeAudioDataFromUri(ctx)("samples/main0.wav"))(function(main0) {
-          var rotating = mapFlipped3(map16(function(v1) {
-            return v1.time;
-          })(withTime(animationFrame)))(function($189) {
-            return function(t) {
-              return t / 1e3 * 120;
-            }(unwrap5(unInstant($189)));
-          });
-          var radius = 100 / 2;
-          var line2 = function(v1) {
-            return function(v2) {
-              return oneOf5([pureAttr2(X1.value)(show4(v1.value0)), pureAttr1(X2.value)(show4(v2.value0)), pureAttr22(Y1.value)(show4(v1.value1)), pureAttr3(Y2.value)(show4(v2.value1))]);
-            };
-          };
-          var drawTine = function(tineSize) {
-            var r = 1 / 2;
-            var p2 = skewY(tineSize);
-            return [p2, add1(p2)(new Tuple(0, r * 4.1)), add1(add1(p2)(new Tuple(0, r * 4.1)))(new Tuple(negate2(unskew)(r * 4.1 / 2), r * 4.1 / 2)), new Tuple(0, 4.1), new Tuple(0, 4.1 + 1)];
-          };
-          var drawTines = function(widths) {
-            var capLength = skew(2);
-            return flip(append13)([new Tuple(capLength, radius - 2 / 2), new Tuple(0, radius)])(prefix1(new Tuple(capLength, 0))(foldMapWithIndex1(function(i2) {
-              return function(tineSize) {
-                return map15(rmap3(function(v1) {
-                  return v1 + incr(i2)(4.1 + 1);
-                }))(drawTine(tineSize));
-              };
-            })(widths)));
-          };
-          var drawArm = function(angle) {
-            return function(v1) {
-              return map15(rotate(angle))(append13(map15(lmap2(negate1))(drawTines(v1.value0)))(reverse(drawTines(v1.value1))));
-            };
-          };
-          var drawArms = function() {
-            var $190 = foldMapWithIndex1(function(i2) {
-              return drawArm(incr(i2)(60));
+          return discard3(log4(main0))(function() {
+            var rotating = mapFlipped3(map16(function(v1) {
+              return v1.time;
+            })(withTime(animationFrame)))(function($197) {
+              return function(t) {
+                return t / 1e3 * 120;
+              }(unwrap5(unInstant($197)));
             });
-            return function($191) {
-              return toPath($190($191));
+            var radius = 100 / 2;
+            var line2 = function(v1) {
+              return function(v2) {
+                return oneOf5([pureAttr2(X1.value)(show4(v1.value0)), pureAttr1(X2.value)(show4(v2.value0)), pureAttr22(Y1.value)(show4(v1.value1)), pureAttr3(Y2.value)(show4(v2.value1))]);
+              };
             };
-          }();
-          return bind6(liftEffect3(create))(function(analyserE) {
-            return bind6(liftEffect3(create))(function(sampleNorm) {
-              var analyserB = behavior(function(e) {
-                return filterMap2(identity12)(sampleOnRight3(analyserE.event)(mapFlipped3(e)(function(sample2) {
-                  return map24(function(analyser2) {
-                    return sample2(unsafePerformEffect(bindFlipped2(toArray6)(getByteFrequencyData(analyser2))));
-                  });
-                })));
+            var drawTine = function(tineSize) {
+              var r = 1 / 2;
+              var p2 = skewY(tineSize);
+              return [p2, add1(p2)(new Tuple(0, r * 4.1)), add1(add1(p2)(new Tuple(0, r * 4.1)))(new Tuple(negate2(unskew)(r * 4.1 / 2), r * 4.1 / 2)), new Tuple(0, 4.1), new Tuple(0, 4.1 + 1)];
+            };
+            var drawTines = function(widths) {
+              var capLength = skew(2);
+              return flip(append13)([new Tuple(capLength, radius - 2 / 2), new Tuple(0, radius)])(prefix1(new Tuple(capLength, 0))(foldMapWithIndex1(function(i2) {
+                return function(tineSize) {
+                  return map15(rmap3(function(v1) {
+                    return v1 + incr(i2)(4.1 + 1);
+                  }))(drawTine(tineSize));
+                };
+              })(widths)));
+            };
+            var drawArm = function(angle) {
+              return function(v1) {
+                return map15(rotate(angle))(append13(map15(lmap2(negate1))(drawTines(v1.value0)))(reverse(drawTines(v1.value1))));
+              };
+            };
+            var drawArms = function() {
+              var $198 = foldMapWithIndex1(function(i2) {
+                return drawArm(incr(i2)(60));
               });
-              var sampled = sample_2(analyserB)(animationFrame);
-              var sampleNormed = lift23(takeNormOr(6 * 9 | 0))(alt9(sampleNorm.event)(pure8(1)))(sampled);
-              return liftEffect3(runInBody(div_(join1(replicate(1)([flip(input)([])(oneOf5([pureAttr4(Xtype.value)("range"), pureAttr5(Min2.value)("0.0"), pureAttr6(Max2.value)("1.0"), pureAttr7(Step.value)("any"), pureAttr8(Value.value)("1.0"), slider_(sampleNorm.push)])), svg(oneOf5([pureAttr9(Width.value)(show4(5 + 2 * 100 + 5)), pureAttr10(Height.value)(show4(5 + 2 * 100 + 5)), pureAttr11(ViewBox.value)(maybe(mempty5)(intercalateMap2(" ")(show4))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5]))), mapFlipped3(alt9(pure8(Nothing.value))(v.event))(function(e) {
-                return attr3(OnClick.value)(function() {
-                  if (e instanceof Just) {
-                    return applySecond4(e.value0)(v.push(Nothing.value));
-                  }
-                  ;
-                  return function __do2() {
-                    var $192 = run2_([analyser_2({
-                      cb: function(v1) {
-                        return voidRight3(analyserE.push(Nothing.value))(analyserE.push(new Just(v1)));
-                      },
-                      fftSize: TTT10.value
-                    })([playBuf2(main0)(bangOn2)])])();
-                    return v.push(Just.create($192))();
-                  };
-                }());
-              })]))([g(oneOf5([pureAttr12(Fill.value)("#bfe6ff"), pureAttr13(StrokeLinecap.value)("butt"), pureAttr14(StrokeLinejoin.value)("miter"), pureAttr15(StrokeOpacity.value)("1")]))(join1(function() {
-                var vs = [1, 3, 3, 6, 4, 4, 5, 3, 1];
-                var vss = join2(Tuple.create)(vs);
-                return [pure15(flip(path)([])(oneOf5([mapFlipped3(alt9(pure8([0]))(map16(map15(toNumber2))(sampleNormed)))(function(freqs) {
-                  var segmented = segment(6)(9)(mapWithNorm(function(i2) {
-                    return function(v2) {
-                      return v2 / (32 - i2 * 24);
+              return function($199) {
+                return toPath($198($199));
+              };
+            }();
+            return bind6(liftEffect3(create))(function(analyserE) {
+              return bind6(liftEffect3(create))(function(sampleNorm) {
+                var analyserB = behavior(function(e) {
+                  return filterMap2(identity12)(sampleOnRight3(analyserE.event)(mapFlipped3(e)(function(sample2) {
+                    return map24(function(analyser2) {
+                      return sample2(unsafePerformEffect(bindFlipped2(toArray6)(getByteFrequencyData(analyser2))));
+                    });
+                  })));
+                });
+                var sampled = sample_2(analyserB)(animationFrame);
+                var sampleNormed = lift23(takeNormOr(6 * 9 | 0))(alt9(sampleNorm.event)(pure8(1)))(map16(mapWithNorm(Tuple.create))(sampled));
+                return liftEffect3(runInBody(div_(join1(replicate(1)([flip(input)([])(oneOf5([pureAttr4(Xtype.value)("range"), pureAttr5(Min2.value)("0.0"), pureAttr6(Max2.value)("1.0"), pureAttr7(Step.value)("any"), pureAttr8(Value.value)("1.0"), slider_(sampleNorm.push)])), svg(oneOf5([pureAttr9(Width.value)(show4(5 + 2 * 100 + 5)), pureAttr10(Height.value)(show4(5 + 2 * 100 + 5)), pureAttr11(ViewBox.value)(maybe(mempty5)(intercalateMap2(" ")(show4))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5]))), mapFlipped3(alt9(pure8(Nothing.value))(v.event))(function(e) {
+                  return attr3(OnClick.value)(function() {
+                    if (e instanceof Just) {
+                      return applySecond4(e.value0)(v.push(Nothing.value));
+                    }
+                    ;
+                    return function __do2() {
+                      var $200 = run2_([analyser_2({
+                        cb: function(v1) {
+                          return voidRight3(analyserE.push(Nothing.value))(analyserE.push(new Just(v1)));
+                        },
+                        fftSize: TTT10.value
+                      })([playBuf2(main0)(bangOn2)])])();
+                      return v.push(Just.create($200))();
                     };
-                  })(freqs));
+                  }());
+                })]))([g(oneOf5([pureAttr12(Fill.value)("#bfe6ff"), pureAttr13(StrokeLinecap.value)("butt"), pureAttr14(StrokeLinejoin.value)("miter"), pureAttr15(StrokeOpacity.value)("1")]))(join1([pure15(flip(path)([])(oneOf5([mapFlipped3(alt9(pure8([new Tuple(0, 0)]))(map16(map32(map15)(map42)(toNumber2))(sampleNormed)))(function(freqs) {
+                  var segmented = segment(6)(9)(mapFlipped1(freqs)(uncurry(function(i2) {
+                    return function(v1) {
+                      return v1 / (32 - i2 * 24);
+                    };
+                  })));
                   return attr12(D.value)(drawArms(distr(join2(Tuple.create)(segmented))));
                 }), pureAttr16(FillOpacity.value)(".91"), pureAttr17(Stroke.value)(function() {
                   if (false) {
@@ -10147,56 +10185,56 @@
                   }
                   ;
                   return "none";
-                }())])))];
-              }()))]), svg(oneOf5([pureAttr9(Width.value)(show4(5 + 100 + 5)), pureAttr10(Height.value)(show4(5 + 100 + 5)), pureAttr11(ViewBox.value)(maybe(mempty5)(intercalateMap2(" ")(show4))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5]))), mapFlipped3(alt9(pure8(Nothing.value))(v.event))(function(e) {
-                return attr3(OnClick.value)(function() {
-                  if (e instanceof Just) {
-                    return applySecond4(e.value0)(v.push(Nothing.value));
-                  }
-                  ;
-                  return function __do2() {
-                    var $193 = run2_([analyser_2({
-                      cb: function(v1) {
-                        return voidRight3(analyserE.push(Nothing.value))(analyserE.push(new Just(v1)));
-                      },
-                      fftSize: TTT8.value
-                    })([playBuf2(pizzs1)(bangOn2)])])();
-                    return v.push(Just.create($193))();
-                  };
-                }());
-              })]))([defs_([linearGradient(oneOf5([pureAttr20(Id.value)("linearGradientArm"), pureAttr21(GradientUnits.value)("userSpaceOnUse"), keepLatest5(mapFlipped3(function() {
-                if (false) {
-                  return rotating;
-                }
-                ;
-                return pure8(0);
-              }())(function(angle) {
-                return line2(rotate(angle)(new Tuple(0, radius)))(rotate(angle)(new Tuple(0, -radius)));
-              }))]))([flip(stop)([])(oneOf5([pureAttr222(Offset.value)("0"), pureAttr23(StopColor.value)("#6b91ab"), pureAttr24(StopOpacity.value)("0.9")])), flip(stop)([])(oneOf5([pureAttr222(Offset.value)("1"), pureAttr23(StopColor.value)("#f3feff"), pureAttr24(StopOpacity.value)("0.95")]))])]), g(oneOf5([pureAttr12(Fill.value)("#bfe6ff"), pureAttr13(StrokeLinecap.value)("butt"), pureAttr14(StrokeLinejoin.value)("miter"), pureAttr15(StrokeOpacity.value)("1"), mapFlipped3(rotating)(function(angle) {
-                return attr22(Transform.value)("rotate(" + (show1(round2(remainder(angle + 30)(function() {
+                }())])))]))]), svg(oneOf5([pureAttr9(Width.value)(show4(5 + 100 + 5)), pureAttr10(Height.value)(show4(5 + 100 + 5)), pureAttr11(ViewBox.value)(maybe(mempty5)(intercalateMap2(" ")(show4))(fromArray([-radius - 5, -radius - 5, 100 + 5 + 5, 100 + 5 + 5]))), mapFlipped3(alt9(pure8(Nothing.value))(v.event))(function(e) {
+                  return attr3(OnClick.value)(function() {
+                    if (e instanceof Just) {
+                      return applySecond4(e.value0)(v.push(Nothing.value));
+                    }
+                    ;
+                    return function __do2() {
+                      var $201 = run2_([analyser_2({
+                        cb: function(v1) {
+                          return voidRight3(analyserE.push(Nothing.value))(analyserE.push(new Just(v1)));
+                        },
+                        fftSize: TTT11.value
+                      })([playBuf2(pizzs1)(bangOn2)])])();
+                      return v.push(Just.create($201))();
+                    };
+                  }());
+                })]))([defs_([linearGradient(oneOf5([pureAttr20(Id.value)("linearGradientArm"), pureAttr21(GradientUnits.value)("userSpaceOnUse"), keepLatest5(mapFlipped3(function() {
                   if (false) {
-                    return 360;
+                    return rotating;
                   }
                   ;
-                  return 60;
-                }()) - 30)) + ")"));
-              })]))(join1(function() {
-                var vs = [1, 3, 3, 6, 4, 4, 5, 3, 1];
-                var vss = join2(Tuple.create)(vs);
-                return [pure15(flip(path)([])(oneOf5([pureAttr25(D.value)(drawArms([vss, vss, vss, vss, vss, vss])), pureAttr16(FillOpacity.value)(".91"), pureAttr17(Stroke.value)(function() {
-                  if (false) {
-                    return "url(#linearGradientArm)";
-                  }
-                  ;
-                  return "none";
-                }()), pureAttr18(StrokeWidth.value)("0.6"), pureAttr19(Filter.value)(function() {
-                  if (false) {
-                    return "url(#filter17837)";
-                  }
-                  ;
-                  return "none";
-                }())])))];
-              }()))])])))));
+                  return pure8(0);
+                }())(function(angle) {
+                  return line2(rotate(angle)(new Tuple(0, radius)))(rotate(angle)(new Tuple(0, -radius)));
+                }))]))([flip(stop)([])(oneOf5([pureAttr222(Offset.value)("0"), pureAttr23(StopColor.value)("#6b91ab"), pureAttr24(StopOpacity.value)("0.9")])), flip(stop)([])(oneOf5([pureAttr222(Offset.value)("1"), pureAttr23(StopColor.value)("#f3feff"), pureAttr24(StopOpacity.value)("0.95")]))])]), g(oneOf5([pureAttr12(Fill.value)("#bfe6ff"), pureAttr13(StrokeLinecap.value)("butt"), pureAttr14(StrokeLinejoin.value)("miter"), pureAttr15(StrokeOpacity.value)("1"), mapFlipped3(rotating)(function(angle) {
+                  return attr22(Transform.value)("rotate(" + (show1(round2(remainder(angle + 30)(function() {
+                    if (false) {
+                      return 360;
+                    }
+                    ;
+                    return 60;
+                  }()) - 30)) + ")"));
+                })]))(join1(function() {
+                  var vs = [1, 3, 3, 6, 4, 4, 5, 3, 1];
+                  var vss = join2(Tuple.create)(vs);
+                  return [pure15(flip(path)([])(oneOf5([pureAttr25(D.value)(drawArms([vss, vss, vss, vss, vss, vss])), pureAttr16(FillOpacity.value)(".91"), pureAttr17(Stroke.value)(function() {
+                    if (false) {
+                      return "url(#linearGradientArm)";
+                    }
+                    ;
+                    return "none";
+                  }()), pureAttr18(StrokeWidth.value)("0.6"), pureAttr19(Filter.value)(function() {
+                    if (false) {
+                      return "url(#filter17837)";
+                    }
+                    ;
+                    return "none";
+                  }())])))];
+                }()))])])))));
+              });
             });
           });
         });

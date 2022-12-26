@@ -7,3 +7,4 @@
 /.spago
 /samples/
 /docs/samples/
+.DS_Store

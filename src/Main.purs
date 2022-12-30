@@ -23,7 +23,7 @@ import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
 import Data.List.Types (List(..), (:))
-import Data.Maybe (Maybe(..), fromMaybe, maybe, maybe')
+import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe, maybe')
 import Data.Monoid (power)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (unwrap)
@@ -480,7 +480,7 @@ main = launchAff_ do
   -- so that there are no issues on iOS
   -- from then, we use it for the rest of the app
   leftSnowflakeStartTime :: EventIO Number <- liftEffect $ Event.create
-  leftSnowflakePlaying :: EventIO Unit <- liftEffect $ Event.create
+  leftSnowflakePlaying :: EventIO Boolean <- liftEffect $ Event.create
   rightSnowflakeBang :: EventIO Unit <- liftEffect $ Event.create
   let
     ocarinaOfTime = do
@@ -503,7 +503,7 @@ main = launchAff_ do
                             else empty
 
                         )
-                        ({ startTime: _, io: _ } <$> leftSnowflakeStartTime.event <*> flipFlop leftSnowflakePlaying.event)
+                        ({ startTime: _, io: _ } <$> leftSnowflakeStartTime.event <*> leftSnowflakePlaying.event)
                     )
                 ]
             , gain_ 1.0
@@ -619,15 +619,15 @@ main = launchAff_ do
                     newStartTime = case st of
                       Nothing -> Just 0.0
                       Just (Right a) -> Just a
-                      Just (Left _) -> Nothing
+                      Just (Left b) -> let t = timeNow - b in if t > 34.0 then Just 0.0 else Nothing
                   setStartTime
                     ( Just case st of
                         Nothing -> Left timeNow
                         Just (Right a) -> Left (timeNow - a)
-                        Just (Left b) -> Right $ let t = timeNow - b in if t > 34.0 then 0.0 else t
+                        Just (Left b) -> let t = timeNow - b in if t > 34.0 then Left timeNow else Right t
                     )
                   for_ newStartTime leftSnowflakeStartTime.push
-                  leftSnowflakePlaying.push unit
+                  leftSnowflakePlaying.push (isJust newStartTime)
               ]
           )
           [ D.g

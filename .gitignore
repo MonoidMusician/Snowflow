@@ -8,3 +8,6 @@
 /samples/
 /docs/samples/
 .DS_Store
+/node_modules
+/docs/
+/output-es

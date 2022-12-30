@@ -1,1 +1,2 @@
-docs/index.js linguist-generated=true
+assets/samples/main0.wav filter=lfs diff=lfs merge=lfs -text
+assets/samples/pizzs1.wav filter=lfs diff=lfs merge=lfs -text

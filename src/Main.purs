@@ -5,10 +5,12 @@ import Prelude
 import CSS.Color (Color)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
+import Control.Monad.ST as ST
 import Data.Align (align)
 import Data.Array ((!!))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
+import Data.Array.ST as ArrayST
 import Data.ArrayBuffer.Typed (toArray) as AB
 import Data.Bifoldable (bifoldMap)
 import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
@@ -30,6 +32,7 @@ import Data.Semigroup.Foldable (intercalateMap)
 import Data.String as String
 import Data.String.CodeUnits as CodeUnits
 import Data.These (These(..), these)
+import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.UInt as UInt
 import Debug (spy)
@@ -53,7 +56,7 @@ import Ocarina.Core (Po2(..), bangOn)
 import Ocarina.Interpret (context, decodeAudioDataFromUri, getByteFrequencyData, bufferSampleRate)
 import Ocarina.Run (run2_)
 import Ocarina.WebAPI (AnalyserNodeCb(..), BrowserAudioBuffer)
-import Partial.Unsafe (unsafeCrashWith)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM.Element (setAttribute)
 import Web.HTML (window)
@@ -223,11 +226,8 @@ sumSum = foldl (align (these identity identity (align bisum))) mempty
 bisum :: forall a. Semiring a => These a a -> a
 bisum = unwrap <<< bifoldMap Additive Additive
 
-overtoneCorrection0 :: Array (Array Number)
-overtoneCorrection0 = spy "overtoneCorrection" $ map map map (1.0 / _) $ overtoneCorrection 0 0 1.0
-
-overtoneCorrection :: Int -> Int -> Number -> Array (Array Number)
-overtoneCorrection i j v = sumSum $ forN (Int.pow 2 (maxOctave - 1)) \harmonic->
+overtoneCorrection0 :: Array { note :: Int, octave :: Int, harmonic :: Int, weight :: Number }
+overtoneCorrection0 = Array.fold $ forN (Int.pow 2 (maxOctave - 1)) \harmonic->
   if harmonic < 2 || harmonic `mod` 2 == 0 then mempty else
     let
       narmonic = Int.toNumber harmonic
@@ -238,13 +238,21 @@ overtoneCorrection i j v = sumSum $ forN (Int.pow 2 (maxOctave - 1)) \harmonic->
       note = nearest `mod` 12
       octave = nearest `div` 12
     in if epsilon < diff && diff < 1.0 - epsilon then mempty else
-      injNote (note+i) (octave+j) (v / narmonic)
+      pure { note, octave, harmonic, weight: Math.sqrt (1.0 / narmonic) }
 
 computeOvertoneCorrections :: Array (Array Number) -> Array (Array Number)
-computeOvertoneCorrections =
-  sumSum <<< mapWithIndex \i ->
-    sumSum <<< mapWithIndex \j ->
-      overtoneCorrection i j
+computeOvertoneCorrections values =
+  unsafePartial do
+    ST.run do
+      working <- traverse (ArrayST.thaw <<< map (const 0.0)) values
+      for_ overtoneCorrection0 \{ note, octave, weight } ->
+        ST.for 0 (Array.length values) \i -> do
+          let valuesi = values `Array.unsafeIndex` i
+          ST.for 0 (Array.length valuesi) \j -> do
+            let value = valuesi `Array.unsafeIndex` j
+            (working `Array.unsafeIndex` ((note+i) `mod` 12)) #
+              ArrayST.modify (octave+j) (_ + value * weight)
+      traverse ArrayST.unsafeFreeze working
 
 type OCC = { original :: Number, corrected :: Number, correction :: Number }
 

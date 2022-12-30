@@ -13,19 +13,21 @@ import Data.ArrayBuffer.Typed (toArray) as AB
 import Data.Bifoldable (bifoldMap)
 import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
 import Data.DateTime.Instant (unInstant)
-import Data.Foldable (class Foldable, foldl, maximumBy, oneOf, sum)
+import Data.Foldable (class Foldable, foldl, for_, maximumBy, oneOf, sum)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
 import Data.List.Types (List(..), (:))
 import Data.Maybe (Maybe(..), fromMaybe, maybe, maybe')
+import Data.Monoid (power)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (unwrap)
 import Data.NonEmpty (NonEmpty, (:|))
 import Data.Number ((%))
 import Data.Number as Math
 import Data.Semigroup.Foldable (intercalateMap)
+import Data.String as String
 import Data.String.CodeUnits as CodeUnits
 import Data.These (These(..), these)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
@@ -53,6 +55,11 @@ import Ocarina.Run (run2_)
 import Ocarina.WebAPI (AnalyserNodeCb(..), BrowserAudioBuffer)
 import Partial.Unsafe (unsafeCrashWith)
 import Unsafe.Coerce (unsafeCoerce)
+import Web.DOM.Element (setAttribute)
+import Web.HTML (window)
+import Web.HTML.HTMLDocument (body)
+import Web.HTML.HTMLElement as HTMLElement
+import Web.HTML.Window (document)
 
 smul :: forall f a. Bifunctor f => Semiring a => a -> f a a -> f a a
 smul c = join bimap (c * _)
@@ -188,7 +195,7 @@ matchingFreq :: Bin -> Array (Tuple Bin Number) -> Number
 matchingFreq freq binned = sum $ binned <#> \(Tuple bin amp) -> amp * overlap freq bin
 
 maxOctave :: Int
-maxOctave = Int.floor (Math.log (44100.0 / 110.0) / Math.log 2.0)
+maxOctave = Int.floor (Math.log (44100.0 / 110.0) / Math.log (2.0))
 
 noteOctaves :: Array (Tuple Int Bin)
 noteOctaves = Array.replicate (12 * maxOctave) unit # mapWithIndex \i _ -> Tuple (i `mod` 12) (binnote i)
@@ -212,7 +219,9 @@ alignL f = map Array.catMaybes <<< align case _ of
 
 sumSum :: forall f. Foldable f => f (Array (Array Number)) -> Array (Array Number)
 sumSum = foldl (align (these identity identity (align bisum))) mempty
-  where bisum = unwrap <<< bifoldMap Additive Additive
+
+bisum :: forall a. Semiring a => These a a -> a
+bisum = unwrap <<< bifoldMap Additive Additive
 
 overtoneCorrection0 :: Array (Array Number)
 overtoneCorrection0 = spy "overtoneCorrection" $ map map map (1.0 / _) $ overtoneCorrection 0 0 1.0
@@ -286,8 +295,38 @@ noteName =
     11 -> "G#"
     _ -> "??"
 
-timbre :: Array (Array Number) -> Array Number
-timbre = maximumBy (compare `on` sum) >>> fromMaybe []
+calcTimbre :: Array (Array Number) -> Array Number
+calcTimbre = maximumBy (compare `on` sum) >>> fromMaybe []
+
+calcVibe :: Array (Array Number) -> Array Number
+calcVibe = foldl (align bisum) []
+
+gradientVibe :: Array Number -> String
+gradientVibe values = "linear-gradient(" <> Array.intercalate "," (Array.reverse components) <> ")"
+  where
+  format :: Int -> String
+  format = Int.toStringAs Int.hexadecimal >>> \s ->
+    (power "0" (2 - String.length s)) <> s
+  maxScale = 10000.0
+  weights =
+    [ 3.5
+    , 3.0
+    , 2.5
+    , 1.5
+    , 0.3
+    , 0.3
+    , 0.15
+    , 0.15
+    ]
+  colors =
+    [ "#8A0085"
+    , "#630D07"
+    , "#115FFA"
+    , "#11F0EC"
+    ] >>= Array.replicate 2
+  formColor c v =
+    c <> format (min 255 $ Int.floor (255.0 * v / maxScale))
+  components = Array.zipWith formColor colors (Array.zipWith (*) weights values)
 
 normalize :: Array Number -> Array (Tuple Number Number)
 normalize values =
@@ -386,8 +425,14 @@ main = launchAff_ do
     currentNoteScores = unsafeMemoize $ sampled <#> noteScores main0
     currentNoteScoresC = unsafeMemoize $ sampled <#> noteScoresC main0
     currentNoteScores' = unsafeMemoize $ sampled <#> noteScores' main0
-    currentTimbre = unsafeMemoize $ currentNoteScores' <#> timbre >>> normalize
+    currentTimbre = unsafeMemoize $ currentNoteScores' <#> calcTimbre
+    currentTimbreN = unsafeMemoize $ currentTimbre <#> normalize
+    currentVibe = unsafeMemoize $ currentNoteScores' <#> calcVibe
+    currentVibeN = unsafeMemoize $ currentVibe <#> normalize
 
+  void $ liftEffect $ Event.subscribe currentVibe \vibe -> do
+    bdy <- window >>= document >>= body
+    setAttribute "style" ("background:" <> gradientVibe vibe) <<< HTMLElement.toElement # for_ bdy
 
   liftEffect $ Deku.runInBody do
     D.div_ $ join $ Array.replicate 1
@@ -437,7 +482,7 @@ main = launchAff_ do
             , D.Style !:= "display:block"
             ]
           ) $ forN maxOctave \i ->
-            let info = dedup $ currentTimbre <#> flip Array.index i >>> fromMaybe (Tuple 0.0 0.0) >>> join bimap (_ * 240.0)
+            let info = dedup $ currentTimbreN <#> flip Array.index i >>> fromMaybe (Tuple 0.0 0.0) >>> join bimap (_ * 240.0)
             in
               flip D.rect [] $ oneOf
                 [ D.Height !:= show 20.0
@@ -445,6 +490,21 @@ main = launchAff_ do
                 , D.Width <:=> map (show <<< snd) info
                 , D.Fill !:= if i == 0 then "red" else if (mod i 2) == 0 then "blue" else "gray"
                 ]
+        , D.svg
+            (oneOf
+              [ D.Width !:= show 240.0
+              , D.Height !:= show 20.0
+              , D.Style !:= "display:block"
+              ]
+            ) $ forN maxOctave \i ->
+              let info = dedup $ currentVibeN <#> flip Array.index i >>> fromMaybe (Tuple 0.0 0.0) >>> join bimap (_ * 240.0)
+              in
+                flip D.rect [] $ oneOf
+                  [ D.Height !:= show 20.0
+                  , D.X <:=> map (show <<< fst) info
+                  , D.Width <:=> map (show <<< snd) info
+                  , D.Fill !:= if i == 0 then "red" else if (mod i 2) == 0 then "blue" else "gray"
+                  ]
       , D.h1_ [ DC.text $ pure "..." <|> dedup (guessNote <$> currentNoteScores) ]
       , D.br_ []
       --, DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> map snd >>> noteScores main0

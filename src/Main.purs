@@ -5,30 +5,34 @@ import Prelude
 import CSS.Color (Color)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
+import Data.Align (align)
 import Data.Array ((!!))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.ArrayBuffer.Typed (toArray) as AB
+import Data.Bifoldable (bifoldMap)
 import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
 import Data.DateTime.Instant (unInstant)
-import Data.Foldable (maximumBy, oneOf, sum)
+import Data.Foldable (class Foldable, foldl, maximumBy, oneOf, sum)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
 import Data.List.Types (List(..), (:))
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe, maybe')
+import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (unwrap)
 import Data.NonEmpty (NonEmpty, (:|))
 import Data.Number ((%))
 import Data.Number as Math
 import Data.Semigroup.Foldable (intercalateMap)
 import Data.String.CodeUnits as CodeUnits
+import Data.These (These(..), these)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.UInt as UInt
+import Debug (spy)
 import Deku.Attribute ((!:=), (:=), (<:=>))
 import Deku.Control as DC
-import Deku.Core (envy)
 import Deku.DOM as D
 import Deku.Listeners (slider_)
 import Deku.Toplevel as Deku
@@ -38,7 +42,7 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior as Behavior
-import FRP.Event (Event, hot, keepLatest, sampleOnRight)
+import FRP.Event (Event, keepLatest, sampleOnRight)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Time (withTime)
@@ -162,8 +166,11 @@ type Bin =
   , high :: Number
   }
 
-octave :: Array Int
-octave = Array.replicate 12 unit # mapWithIndex \i _ -> i
+forN :: forall a. Int -> (Int -> a) -> Array a
+forN n f = Array.replicate n unit # mapWithIndex \i _ -> f i
+
+octaveRange :: Array Int
+octaveRange = forN 12 identity
 
 -- TODO
 overlap :: Bin -> Bin -> Number
@@ -187,16 +194,72 @@ noteOctaves :: Array (Tuple Int Bin)
 noteOctaves = Array.replicate (12 * maxOctave) unit # mapWithIndex \i _ -> Tuple (i `mod` 12) (binnote i)
 
 gatherOctaves :: Array (Tuple Int Number) -> Array (Array Number)
-gatherOctaves allOctaves = octave <#> \i ->
+gatherOctaves allOctaves = octaveRange <#> \i ->
   snd <$> Array.filter (fst >>> eq i) allOctaves
 
-noteScores' :: BrowserAudioBuffer -> Array Number -> Array (Array Number)
-noteScores' ab fft = gatherOctaves
+injNote :: Int -> Int -> Number -> Array (Array Number)
+injNote i0 j0 v =
+  let
+    corrected = Tuple (mod i0 12) (j0 + div i0 12)
+  in octaveRange <#> \i -> forN maxOctave \j ->
+  if Tuple i j == corrected then v else 0.0
+
+alignL :: forall a b c. (a -> Maybe b -> c) -> Array a -> Array b -> Array c
+alignL f = map Array.catMaybes <<< align case _ of
+  This l -> Just (f l Nothing)
+  Both l r -> Just (f l (Just r))
+  That _ -> Nothing
+
+sumSum :: forall f. Foldable f => f (Array (Array Number)) -> Array (Array Number)
+sumSum = foldl (align (these identity identity (align bisum))) mempty
+  where bisum = unwrap <<< bifoldMap Additive Additive
+
+overtoneCorrection0 :: Array (Array Number)
+overtoneCorrection0 = spy "overtoneCorrection" $ map map map (1.0 / _) $ overtoneCorrection 0 0 1.0
+
+overtoneCorrection :: Int -> Int -> Number -> Array (Array Number)
+overtoneCorrection i j v = sumSum $ forN (Int.pow 2 (maxOctave - 1)) \harmonic->
+  if harmonic < 2 || harmonic `mod` 2 == 0 then mempty else
+    let
+      narmonic = Int.toNumber harmonic
+      pitch = (Math.log narmonic / Math.log 2.0) * 12.0
+      nearest = Int.round pitch
+      epsilon = 0.2
+      diff = pitch % 1.0
+      note = nearest `mod` 12
+      octave = nearest `div` 12
+    in if epsilon < diff && diff < 1.0 - epsilon then mempty else
+      injNote (note+i) (octave+j) (v / narmonic)
+
+computeOvertoneCorrections :: Array (Array Number) -> Array (Array Number)
+computeOvertoneCorrections =
+  sumSum <<< mapWithIndex \i ->
+    sumSum <<< mapWithIndex \j ->
+      overtoneCorrection i j
+
+type OCC = { original :: Number, corrected :: Number, correction :: Number }
+
+applyOvertoneCorrections :: Array (Array Number) -> Array (Array OCC)
+applyOvertoneCorrections orig =
+  let
+    corrections = computeOvertoneCorrections orig
+    correct original c =
+      { original, corrected: max 0.0 $ original - fromMaybe 0.0 c, correction: fromMaybe 0.0 c }
+  in alignL (\v -> maybe' (\_ -> join { original: _, corrected: _, correction: 0.0 } <$> v) (alignL correct v)) orig corrections
+
+noteScoresC' :: BrowserAudioBuffer -> Array Number -> Array (Array OCC)
+noteScoresC' ab fft = applyOvertoneCorrections $ gatherOctaves
   let
     binned = freqBins ab fft
   in
     noteOctaves <#> map \octaveBin ->
       matchingFreq octaveBin binned
+
+noteScoresC :: BrowserAudioBuffer -> Array Number -> Array OCC
+noteScoresC ab fft = sum <$> noteScoresC' ab fft
+
+noteScores' :: BrowserAudioBuffer -> Array Number -> Array (Array Number)
+noteScores' ab fft = map _.corrected <$> noteScoresC' ab fft
 
 noteScores :: BrowserAudioBuffer -> Array Number -> Array Number
 noteScores ab fft = sum <$> noteScores' ab fft
@@ -226,8 +289,8 @@ noteName =
 timbre :: Array (Array Number) -> Array Number
 timbre = maximumBy (compare `on` sum) >>> fromMaybe []
 
-norm :: Array Number -> Array (Tuple Number Number)
-norm values =
+normalize :: Array Number -> Array (Tuple Number Number)
+normalize values =
   let total = sum values in
   values # mapWithIndex \i v -> Tuple (sum (Array.take i values) / total) (v / total)
 
@@ -314,11 +377,16 @@ main = launchAff_ do
         sampleOnRight analyserE.event $ e <#> \sample ->
           map \analyser ->
             sample $ unsafePerformEffect $ AB.toArray =<< getByteFrequencyData analyser
+    analysation =
+      { cb: AnalyserNodeCb \v -> analyserE.push Nothing <$ analyserE.push (Just v)
+      , fftSize: TTT12, smoothingTimeConstant: 0.3
+      }
     sampled = unsafeMemoize $ map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
     sampleNormed = dedup $ lift2 (takeNormOr (6*9)) (sampleNorm.event <|> pure 1.0) (mapWithNorm Tuple <$> sampled <|> pure [Tuple 0.0 0.0])
     currentNoteScores = unsafeMemoize $ sampled <#> noteScores main0
+    currentNoteScoresC = unsafeMemoize $ sampled <#> noteScoresC main0
     currentNoteScores' = unsafeMemoize $ sampled <#> noteScores' main0
-    currentTimbre = unsafeMemoize $ currentNoteScores' <#> timbre >>> norm
+    currentTimbre = unsafeMemoize $ currentNoteScores' <#> timbre >>> normalize
 
 
   liftEffect $ Deku.runInBody do
@@ -338,18 +406,29 @@ main = launchAff_ do
           (oneOf
             [ D.Width !:= show 240.0
             , D.Height !:= show 240.0
-            , D.Fill !:= "green"
             , D.Style !:= "display:block"
             ]
-          ) $ octave <#> \i ->
+          ) $ octaveRange >>= \i ->
             let
-              height = dedup $ currentNoteScores # Event.filterMap \scores ->
-                (scores !! i) <#> \score -> Math.round $ score / 100.0
-            in flip D.rect [] $ oneOf
-              [ D.Width !:= show 20.0
-              , D.X !:= show (Int.toNumber i * 20.0)
-              , D.Height <:=> map show height
-              , D.Y <:=> map (show <<< (240.0 - _)) height
+              height = dedup $ currentNoteScoresC # Event.filterMap \scores ->
+                (scores !! i) <#> \{ original: score } -> Math.round $ score / 100.0
+              heightC = dedup $ currentNoteScoresC # Event.filterMap \scores ->
+                (scores !! i) <#> \{ corrected: score } -> Math.round $ score / 100.0
+            in flip D.rect [] <$>
+              [ oneOf
+                [ D.Width !:= show 20.0
+                , D.X !:= show (Int.toNumber i * 20.0)
+                , D.Height <:=> map show height
+                , D.Y <:=> map (show <<< (240.0 - _)) height
+                , D.Fill !:= "gray"
+                ]
+              , oneOf
+                [ D.Width !:= show 20.0
+                , D.X !:= show (Int.toNumber i * 20.0)
+                , D.Height <:=> map show heightC
+                , D.Y <:=> map (show <<< (240.0 - _)) heightC
+                , D.Fill !:= "green"
+                ]
               ]
       , D.svg
           (oneOf
@@ -357,7 +436,7 @@ main = launchAff_ do
             , D.Height !:= show 20.0
             , D.Style !:= "display:block"
             ]
-          ) $ octave <#> \i ->
+          ) $ forN maxOctave \i ->
             let info = dedup $ currentTimbre <#> flip Array.index i >>> fromMaybe (Tuple 0.0 0.0) >>> join bimap (_ * 240.0)
             in
               flip D.rect [] $ oneOf
@@ -380,7 +459,7 @@ main = launchAff_ do
             , (pure Nothing <|> event) <#> \e ->
                 D.OnClick := case e of
                   Just x -> x *> push Nothing
-                  _ -> run2_ [ Oc.analyser_ { cb: AnalyserNodeCb \v -> analyserE.push Nothing <$ analyserE.push (Just v), fftSize: TTT12 } $ flip const [ Oc.gain_ 0.15 [ Oc.sinOsc 440.0 bangOn ] ] [ Oc.playBuf main0 bangOn ] ]
+                  _ -> run2_ [ Oc.analyser_ analysation $ flip const [ Oc.gain_ 0.15 [ Oc.sinOsc 440.0 bangOn ] ] [ Oc.playBuf main0 bangOn ] ]
                          >>= Just >>> push
             ]
           )
@@ -413,7 +492,7 @@ main = launchAff_ do
             , (pure Nothing <|> event) <#> \e ->
                 D.OnClick := case e of
                   Just x -> x *> push Nothing
-                  _ -> run2_ [ Oc.analyser_ { cb: AnalyserNodeCb \v -> analyserE.push Nothing <$ analyserE.push (Just v), fftSize: TTT8 } $ [ Oc.playBuf pizzs1 bangOn ] ]
+                  _ -> run2_ [ Oc.analyser_ analysation $ [ Oc.playBuf pizzs1 bangOn ] ]
                          >>= Just >>> push
             ]
           )

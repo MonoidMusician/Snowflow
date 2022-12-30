@@ -22,6 +22,8 @@
   , "ocarina"
   , "partial"
   , "prelude"
+  , "strings"
+  , "these"
   , "tuples"
   , "uint"
   , "unsafe-coerce"

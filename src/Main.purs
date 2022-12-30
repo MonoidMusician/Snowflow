@@ -32,10 +32,9 @@ import Data.Semigroup.Foldable (intercalateMap)
 import Data.String as String
 import Data.String.CodeUnits as CodeUnits
 import Data.These (These(..), these)
-import Data.Traversable (for, traverse)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.UInt as UInt
-import Debug (spy)
 import Deku.Attribute ((!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
@@ -57,6 +56,7 @@ import Ocarina.Interpret (context, decodeAudioDataFromUri, getByteFrequencyData,
 import Ocarina.Run (run2_)
 import Ocarina.WebAPI (AnalyserNodeCb(..), BrowserAudioBuffer)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Snowflow.Assets (main0Url, pizzs1Url)
 import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM.Element (setAttribute)
 import Web.HTML (window)
@@ -127,7 +127,7 @@ segment m n as = do
 
 -- TODO
 interp :: Color -> Color -> Number -> Color
-interp x y i = x
+interp x _ _ = x
 
 interpArray :: NonEmpty List Color -> Number -> Color
 interpArray (x :| y : _) i | i <= 1.0 = interp x y (max 0.0 i)
@@ -362,8 +362,8 @@ main :: Effect Unit
 main = launchAff_ do
   { event, push } <- liftEffect Event.create
   ctx <- context
-  pizzs1 <- decodeAudioDataFromUri ctx "samples/pizzs1.wav"
-  main0 <- decodeAudioDataFromUri ctx "samples/main0.wav"
+  pizzs1 <- decodeAudioDataFromUri ctx pizzs1Url
+  main0 <- decodeAudioDataFromUri ctx main0Url
   log (unsafeCoerce main0)
 
   let

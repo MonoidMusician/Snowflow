@@ -616,15 +616,18 @@ main = launchAff_ do
                   ctx <- ocarinaOnlyOnce o
                   timeNow <- getAudioClockTime ctx
                   let
+                    judgeRestart :: forall x. _ -> (_ -> x) -> (_ -> x) -> x
+                    judgeRestart b l r = let t = timeNow - b in if t > 34.0 then l t else r t
+                  let
                     newStartTime = case st of
                       Nothing -> Just 0.0
                       Just (Right a) -> Just a
-                      Just (Left b) -> let t = timeNow - b in if t > 34.0 then Just 0.0 else Nothing
+                      Just (Left b) -> judgeRestart b (const $ Just 0.0) (const Nothing)
                   setStartTime
                     ( Just case st of
                         Nothing -> Left timeNow
                         Just (Right a) -> Left (timeNow - a)
-                        Just (Left b) -> let t = timeNow - b in if t > 34.0 then Left timeNow else Right t
+                        Just (Left b) -> judgeRestart b (const $ Left timeNow) Right
                     )
                   for_ newStartTime leftSnowflakeStartTime.push
                   leftSnowflakePlaying.push (isJust newStartTime)

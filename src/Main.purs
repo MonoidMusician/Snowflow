@@ -492,15 +492,15 @@ main = launchAff_ do
                 [ dyn
                     ( map
                         ( \{ startTime, io } ->
-                            
-                              if io then
-                                Alt.do
-                                  leftSnowflakePlaying.event $> silence
-                                  pure $ sound
-                                    $ Oc.playBuf
-                                        { buffer: main0, bufferOffset: startTime }
-                                        bangOn
-                              else empty
+
+                            if io then
+                              Alt.do
+                                leftSnowflakePlaying.event $> silence
+                                pure $ sound
+                                  $ Oc.playBuf
+                                      { buffer: main0, bufferOffset: startTime }
+                                      bangOn
+                            else empty
 
                         )
                         ({ startTime: _, io: _ } <$> leftSnowflakeStartTime.event <*> flipFlop leftSnowflakePlaying.event)
@@ -522,6 +522,11 @@ main = launchAff_ do
       pure ctx
   liftEffect $ Deku.runInBody Deku.do
     setOcarina /\ ocarina <- useState ocarinaOfTime
+    let
+      ocarinaOnlyOnce o = do
+        ctx <- o
+        setOcarina (pure ctx)
+        pure ctx
     setStartTime /\ startTime <- useState Nothing
     D.div_ $ join $ Array.replicate 1
       [ D.p_ [ DC.text_ "Click on the large snowflake to start the music!" ]
@@ -608,8 +613,7 @@ main = launchAff_ do
               , D.Height !:= show (padding + 2.0 * size + padding)
               , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
               , click $ (Tuple <$> startTime <*> ocarina) <#> \(st /\ o) -> do
-                  ctx <- o
-                  setOcarina (pure ctx)
+                  ctx <- ocarinaOnlyOnce o
                   timeNow <- getAudioClockTime ctx
                   let
                     newStartTime = case st of
@@ -654,8 +658,7 @@ main = launchAff_ do
               , D.Height !:= show (padding + size + padding)
               , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
               , click $ ocarina <#> \o -> do
-                  ctx <- o
-                  setOcarina (pure ctx)
+                  void $ ocarinaOnlyOnce o
                   rightSnowflakeBang.push unit
               ]
           )

@@ -1,0 +1,1 @@
+.bars{display:flex;height:240px;align-items:end}.bars>*{width:20px;background:green}.divvy{display:flex;height:20px;width:240px}.divvy>*{background:gray}.divvy>:nth-child(1){background:red}.divvy>:nth-child(2n){background:green}.divvy>:nth-child(4n){background:yellow}

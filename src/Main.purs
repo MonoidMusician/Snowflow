@@ -38,7 +38,6 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested ((/\))
 import Data.UInt as UInt
-import Debug (spy)
 import Deku.Attribute ((!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
@@ -56,6 +55,7 @@ import FRP.Event (Event, EventIO, fold, keepLatest, sampleOnRight)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Time (withTime)
+import Ocarina.Control (gain_)
 import Ocarina.Control as Oc
 import Ocarina.Core (Po2(..), bangOn, sound, silence, dyn)
 import Ocarina.Interpret (bufferSampleRate, context, context_, decodeAudioDataFromUri, getAudioClockTime, getByteFrequencyData)
@@ -488,33 +488,35 @@ main = launchAff_ do
       void $ run2 ctx
         [ Oc.analyser_ analysation
             --[ Oc.gain_ 0.15 [ Oc.sinOsc 440.0 bangOn ] ]
-            [ dyn
-                ( map
-                    ( \{ startTime, io } -> let _ = spy "foo" {startTime,io} in
-                        if io then
-                          Alt.do
-                            (map (spy "turning off") leftSnowflakePlaying.event) $> silence
-                            pure $ sound
-                              $ Oc.playBuf
-                                  { buffer: main0, bufferOffset: startTime }
-                                  bangOn
-                        else empty
+            [ gain_ 1.0
+                [ dyn
+                    ( map
+                        ( \{ startTime, io } ->
+                            
+                              if io then
+                                Alt.do
+                                  leftSnowflakePlaying.event $> silence
+                                  pure $ sound
+                                    $ Oc.playBuf
+                                        { buffer: main0, bufferOffset: startTime }
+                                        bangOn
+                              else empty
 
+                        )
+                        ({ startTime: _, io: _ } <$> leftSnowflakeStartTime.event <*> flipFlop leftSnowflakePlaying.event)
                     )
-                    ({ startTime: _, io: _ } <$> leftSnowflakeStartTime.event <*> flipFlop leftSnowflakePlaying.event)
-                )
-            ]
-        , Oc.analyser_ analysation
-            -- [ Oc.gain_ 0.15 [ Oc.sinOsc 440.0 bangOn ] ]
-            [ dyn
-                ( map
-                    ( \_ -> pure $ sound
-                        $ Oc.playBuf
-                            pizzs1
-                            bangOn
+                ]
+            , gain_ 1.0
+                [ dyn
+                    ( map
+                        ( \_ -> pure $ sound
+                            $ Oc.playBuf
+                                pizzs1
+                                bangOn
+                        )
+                        (rightSnowflakeBang.event)
                     )
-                    (rightSnowflakeBang.event)
-                )
+                ]
             ]
         ]
       pure ctx

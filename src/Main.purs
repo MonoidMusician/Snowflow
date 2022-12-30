@@ -42,7 +42,7 @@ import Deku.Listeners (slider_)
 import Deku.Toplevel as Deku
 import Effect (Effect)
 import Effect.Aff (launchAff_)
-import Effect.Class (liftEffect)
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior as Behavior
@@ -351,8 +351,8 @@ takeNormOr :: forall a. Int -> Number -> Array a -> Array a
 takeNormOr atLeast norm as = Array.take (max atLeast (Int.floor (Int.toNumber (Array.length as) * norm))) as
 
 
-unsafeMemoize :: Event ~> Event
-unsafeMemoize e = unsafePerformEffect do
+memoize :: forall m a. MonadEffect m => Event a -> m (Event a)
+memoize e = liftEffect do
   { push, event } <- Event.create
   void $ Event.subscribe e push
   pure event
@@ -360,7 +360,7 @@ unsafeMemoize e = unsafePerformEffect do
 
 main :: Effect Unit
 main = launchAff_ do
-  { event, push } <- liftEffect Event.create
+  unsubscriber <- liftEffect Event.create
   ctx <- context
   pizzs1 <- decodeAudioDataFromUri ctx pizzs1Url
   main0 <- decodeAudioDataFromUri ctx main0Url
@@ -428,20 +428,27 @@ main = launchAff_ do
       { cb: AnalyserNodeCb \v -> analyserE.push Nothing <$ analyserE.push (Just v)
       , fftSize: TTT12, smoothingTimeConstant: 0.3
       }
-    sampled = unsafeMemoize $ map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
-    sampleNormed = dedup $ lift2 (takeNormOr (6*9)) (sampleNorm.event <|> pure 1.0) (mapWithNorm Tuple <$> sampled <|> pure [Tuple 0.0 0.0])
-    currentNoteScores = unsafeMemoize $ sampled <#> noteScores main0
-    currentNoteScoresC = unsafeMemoize $ sampled <#> noteScoresC main0
-    currentNoteScores' = unsafeMemoize $ sampled <#> noteScores' main0
-    currentTimbre = unsafeMemoize $ currentNoteScores' <#> calcTimbre
-    currentTimbreN = unsafeMemoize $ currentTimbre <#> normalize
-    currentVibe = unsafeMemoize $ currentNoteScores' <#> calcVibe
-    currentVibeN = unsafeMemoize $ currentVibe <#> normalize
+  sampled  <- memoize $ map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
+  let sampleNormed = dedup $ lift2 (takeNormOr (6*9)) (sampleNorm.event <|> pure 1.0) (mapWithNorm Tuple <$> sampled <|> pure [Tuple 0.0 0.0])
+  currentNoteScores  <- memoize $ sampled <#> noteScores main0
+  currentNoteScoresC  <- memoize $ sampled <#> noteScoresC main0
+  currentNoteScores'  <- memoize $ sampled <#> noteScores' main0
+  currentTimbre  <- memoize $ currentNoteScores' <#> calcTimbre
+  currentTimbreN  <- memoize $ currentTimbre <#> normalize
+  currentVibe  <- memoize $ currentNoteScores' <#> calcVibe
+  currentVibeN  <- memoize $ currentVibe <#> normalize
 
   void $ liftEffect $ Event.subscribe currentVibe \vibe -> do
     bdy <- window >>= document >>= body
     setAttribute "style" ("background:" <> gradientVibe vibe) <<< HTMLElement.toElement # for_ bdy
 
+  -- as the page is fully interactive audio from the get-go, we
+  -- never want to recreate audio contexts
+  -- to that end, we create a single audio context and initialize it
+  -- on the first click, making sure it is initialized right away
+  -- so that there are no issues on iOS
+  -- from then, we use it for the rest of the app
+  
   liftEffect $ Deku.runInBody do
     D.div_ $ join $ Array.replicate 1
       [ D.p_ [ DC.text_ "Click on the large snowflake to start the music!" ]
@@ -524,11 +531,11 @@ main = launchAff_ do
             [ D.Width !:= show (padding + 2.0 * size + padding)
             , D.Height !:= show (padding + 2.0 * size + padding)
             , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [-radius-padding, -radius-padding, size+padding+padding, size+padding+padding])
-            , (pure Nothing <|> event) <#> \e ->
+            , (pure Nothing <|> unsubscriber.event) <#> \e ->
                 D.OnClick := case e of
-                  Just x -> x *> push Nothing
+                  Just x -> x *> unsubscriber.push Nothing
                   _ -> run2_ [ Oc.analyser_ analysation $ flip const [ Oc.gain_ 0.15 [ Oc.sinOsc 440.0 bangOn ] ] [ Oc.playBuf main0 bangOn ] ]
-                         >>= Just >>> push
+                         >>= Just >>> unsubscriber.push
             ]
           )
           [ D.g
@@ -557,11 +564,11 @@ main = launchAff_ do
             [ D.Width !:= show (padding + size + padding)
             , D.Height !:= show (padding + size + padding)
             , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [-radius-padding, -radius-padding, size+padding+padding, size+padding+padding])
-            , (pure Nothing <|> event) <#> \e ->
+            , (pure Nothing <|> unsubscriber.event) <#> \e ->
                 D.OnClick := case e of
-                  Just x -> x *> push Nothing
+                  Just x -> x *> unsubscriber.push Nothing
                   _ -> run2_ [ Oc.analyser_ analysation $ [ Oc.playBuf pizzs1 bangOn ] ]
-                         >>= Just >>> push
+                         >>= Just >>> unsubscriber.push
             ]
           )
           [ D.defs_

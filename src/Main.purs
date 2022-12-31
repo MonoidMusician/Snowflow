@@ -45,13 +45,14 @@ import Deku.Do (bind) as Deku
 import Deku.Hooks (useState)
 import Deku.Listeners (click, slider_)
 import Deku.Toplevel (runInBody) as Deku
+import Debug (spy)
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior as Behavior
-import FRP.Event (Event, EventIO, fold, keepLatest, sampleOnRight)
+import FRP.Event (Event, EventIO, keepLatest, sampleOnRight)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Time (withTime)
@@ -248,14 +249,15 @@ bisum :: forall a. Semiring a => These a a -> a
 bisum = unwrap <<< bifoldMap Additive Additive
 
 overtoneCorrection0 :: Array { note :: Int, octave :: Int, harmonic :: Int, weight :: Number }
-overtoneCorrection0 = Array.fold $ forN (Int.pow 2 (maxOctave - 1)) \harmonic ->
+overtoneCorrection0 = spy "overtoneCorrection0" $ Array.fold $ forN (Int.pow 2 6 - 1) \harmonic ->
   if harmonic < 2 || harmonic `mod` 2 == 0 then mempty
   else
     let
       narmonic = Int.toNumber harmonic
       pitch = (Math.log narmonic / Math.log 2.0) * 12.0
       nearest = Int.round pitch
-      epsilon = 0.2
+      -- Include the septimal minor seventh
+      epsilon = 0.35
       diff = pitch % 1.0
       note = nearest `mod` 12
       octave = nearest `div` 12
@@ -306,10 +308,11 @@ noteScores' ab fft = map _.corrected <$> noteScoresC' ab fft
 noteScores :: BrowserAudioBuffer -> Array Number -> Array Number
 noteScores ab fft = sum <$> noteScores' ab fft
 
+whichNote :: Array Number -> Maybe Int
+whichNote = mapWithIndex Tuple >>> maximumBy (compare `on` snd) >>> map fst
+
 guessNote :: Array Number -> String
-guessNote = mapWithIndex Tuple >>> maximumBy (compare `on` snd) >>> case _ of
-  Nothing -> "?"
-  Just (Tuple i _) -> noteName i
+guessNote = whichNote >>> maybe "?" noteName
 
 noteName :: Int -> String
 noteName =
@@ -362,14 +365,15 @@ gradientVibe values = "linear-gradient(" <> Array.intercalate "," (Array.reverse
   components = Array.zipWith formColor colors (Array.zipWith (*) weights values)
 
 flipFlop :: forall a. Event a -> Event Boolean
-flipFlop = fold (\b _ -> not b) false
+flipFlop = Event.fold (\b _ -> not b) false
 
 normalize :: Array Number -> Array (Tuple Number Number)
 normalize values =
   let
     total = sum values
   in
-    values # mapWithIndex \i v -> Tuple (sum (Array.take i values) / total) (v / total)
+    if total == 0.0 then [] else
+      values # mapWithIndex \i v -> Tuple (sum (Array.take i values) / total) (v / total)
 
 mapWithNorm :: forall a b. (Number -> a -> b) -> Array a -> Array b
 mapWithNorm f as = as # mapWithIndex \i -> f (Int.toNumber i / Int.toNumber (Array.length as))
@@ -457,10 +461,10 @@ main = launchAff_ do
     analysation =
       { cb: AnalyserNodeCb \v -> analyserE.push Nothing <$ analyserE.push (Just v)
       , fftSize: TTT12
-      , smoothingTimeConstant: 0.3
+      , smoothingTimeConstant: 0.5
       }
   sampled <- memoize $ map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
-  let sampleNormed = dedup $ lift2 (takeNormOr (6 * 9)) (sampleNorm.event <|> pure 1.0) (mapWithNorm Tuple <$> sampled <|> pure [ Tuple 0.0 0.0 ])
+  let sampleNormed = dedup $ lift2 (takeNormOr (6 * 9)) (sampleNorm.event <|> pure 0.5) (mapWithNorm Tuple <$> sampled <|> pure [ Tuple 0.0 0.0 ])
   currentNoteScores <- memoize $ sampled <#> noteScores main0
   currentNoteScoresC <- memoize $ sampled <#> noteScoresC main0
   currentNoteScores' <- memoize $ sampled <#> noteScores' main0
@@ -537,7 +541,7 @@ main = launchAff_ do
           , D.Min !:= "0.0"
           , D.Max !:= "1.0"
           , D.Step !:= "any"
-          , D.Value !:= "1.0"
+          , D.Value !:= "0.5"
           , slider_ sampleNorm.push
           ]
       , D.svg
@@ -546,29 +550,38 @@ main = launchAff_ do
               , D.Height !:= show 240.0
               , D.Style !:= "display:block"
               ]
-          ) $ octaveRange >>= \i ->
-          let
-            height = dedup $ currentNoteScoresC # Event.filterMap \scores ->
-              (scores !! i) <#> \{ original: score } -> Math.round $ score / 100.0
-            heightC = dedup $ currentNoteScoresC # Event.filterMap \scores ->
-              (scores !! i) <#> \{ corrected: score } -> Math.round $ score / 100.0
-          in
-            flip D.rect [] <$>
-              [ oneOf
-                  [ D.Width !:= show 20.0
-                  , D.X !:= show (Int.toNumber i * 20.0)
-                  , D.Height <:=> map show height
-                  , D.Y <:=> map (show <<< (240.0 - _)) height
-                  , D.Fill !:= "gray"
+          ) $ join $ Array.reverse
+            [ pure $ flip D.rect [] $ oneOf
+                [ D.Width !:= show 240.0
+                , D.X !:= show 0.0
+                , D.Height !:= show 1.0
+                , D.Y <:=> map (show <<< (240.0 - _)) (pure 0.0 <|> (_ / (4.0 * 100.0)) <<< sum <$> currentNoteScores)
+                , D.Fill !:= "white"
+                ]
+            , octaveRange >>= \i ->
+              let
+                height = dedup $ currentNoteScoresC # Event.filterMap \scores ->
+                  (scores !! i) <#> \{ original: score } -> Math.round $ score / 100.0
+                heightC = dedup $ currentNoteScoresC # Event.filterMap \scores ->
+                  (scores !! i) <#> \{ corrected: score } -> Math.round $ score / 100.0
+              in
+                flip D.rect [] <$>
+                  [ oneOf
+                      [ D.Width !:= show 20.0
+                      , D.X !:= show (Int.toNumber i * 20.0)
+                      , D.Height <:=> map show height
+                      , D.Y <:=> map (show <<< (240.0 - _)) height
+                      , D.Fill !:= "gray"
+                      ]
+                  , oneOf
+                      [ D.Width !:= show 20.0
+                      , D.X !:= show (Int.toNumber i * 20.0)
+                      , D.Height <:=> map show heightC
+                      , D.Y <:=> map (show <<< (240.0 - _)) heightC
+                      , D.Fill <:=> (currentNoteScores <#> whichNote >>> eq (Just i) >>> if _ then "yellow" else "green")
+                      ]
                   ]
-              , oneOf
-                  [ D.Width !:= show 20.0
-                  , D.X !:= show (Int.toNumber i * 20.0)
-                  , D.Height <:=> map show heightC
-                  , D.Y <:=> map (show <<< (240.0 - _)) heightC
-                  , D.Fill !:= "green"
-                  ]
-              ]
+            ]
       , D.svg
           ( oneOf
               [ D.Width !:= show 240.0
@@ -660,9 +673,10 @@ main = launchAff_ do
               [ D.Width !:= show (padding + size + padding)
               , D.Height !:= show (padding + size + padding)
               , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
-              , click $ ocarina <#> \o -> do
-                  void $ ocarinaOnlyOnce o
-                  rightSnowflakeBang.push unit
+              , D.OnMousedown <:=> do
+                  ocarina <#> \o -> do
+                    void $ ocarinaOnlyOnce o
+                    rightSnowflakeBang.push unit
               ]
           )
           [ D.defs_

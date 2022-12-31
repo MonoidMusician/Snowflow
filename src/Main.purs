@@ -6,6 +6,7 @@ import CSS.Color (Color)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Control.Monad.ST as ST
+import Control.Monad.State (execState, get, gets)
 import Control.Plus (empty)
 import Data.Align (align)
 import Data.Array ((!!))
@@ -15,18 +16,21 @@ import Data.Array.ST as ArrayST
 import Data.ArrayBuffer.Typed (toArray) as AB
 import Data.Bifoldable (bifoldMap)
 import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
-import Data.DateTime.Instant (unInstant)
+import Data.DateTime.Instant (Instant, unInstant)
+import Data.DateTime.Instant as Instant
 import Data.Either (Either(..))
 import Data.Foldable (class Foldable, foldl, for_, maximumBy, oneOf, sum)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
+import Data.Lens ((%=))
+import Data.Lens.Record (prop)
 import Data.List.Types (List(..), (:))
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe, maybe')
 import Data.Monoid (power)
 import Data.Monoid.Additive (Additive(..))
-import Data.Newtype (unwrap)
+import Data.Newtype (un, unwrap)
 import Data.NonEmpty (NonEmpty, (:|))
 import Data.Number ((%))
 import Data.Number as Math
@@ -35,9 +39,11 @@ import Data.String as String
 import Data.String.CodeUnits as CodeUnits
 import Data.These (These(..), these)
 import Data.Traversable (traverse)
+import Data.TraversableWithIndex (mapAccumLWithIndex)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested ((/\))
 import Data.UInt as UInt
+import Debug (spy)
 import Deku.Attribute ((!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
@@ -45,9 +51,8 @@ import Deku.Do (bind) as Deku
 import Deku.Hooks (useState)
 import Deku.Listeners (click, slider_)
 import Deku.Toplevel (runInBody) as Deku
-import Debug (spy)
 import Effect (Effect)
-import Effect.Aff (launchAff_)
+import Effect.Aff (Milliseconds(..), launchAff_)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
@@ -55,6 +60,7 @@ import FRP.Behavior as Behavior
 import FRP.Event (Event, EventIO, keepLatest, sampleOnRight)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
+import FRP.Event.Class (sampleOnRightOp)
 import FRP.Event.Time (withTime)
 import Ocarina.Control (gain_)
 import Ocarina.Control as Oc
@@ -65,6 +71,7 @@ import Ocarina.WebAPI (AnalyserNodeCb(..), BrowserAudioBuffer)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import QualifiedDo.Alt as Alt
 import Snowflow.Assets (main0Url, pizzs1Url)
+import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM.Element (setAttribute)
 import Web.HTML (window)
@@ -390,6 +397,130 @@ memoize e = liftEffect do
   void $ Event.subscribe e push
   pure event
 
+diffRel :: Instant -> Instant -> Milliseconds -> Number
+diffRel prev now (Milliseconds timescale) =
+  un Milliseconds (Instant.diff now prev) / timescale
+
+momentumConstants ::
+  { accel :: Milliseconds
+  , decel :: Milliseconds
+  , fade :: Milliseconds
+  , maxAccel :: Number
+  , maxDecel :: Number
+  , maxSpeed :: Number
+  , revive :: Milliseconds
+  }
+momentumConstants =
+  { maxAccel: 500.0
+  , maxDecel: -60.0
+  , maxSpeed: 300.0
+  , accel: Milliseconds 1000.0
+  , decel: Milliseconds 500.0
+  , fade: Milliseconds 3500.0
+  , revive: Milliseconds 6000.0
+  }
+
+type Momentum =
+  { tracking :: Tracking
+  , notes :: Array (NoteMomentum ())
+  }
+type Tracking =
+  { note :: Maybe Int
+  , targetSpeed :: Number
+  , currentAccel :: Number
+  , currentSpeed :: Number
+  , currentPosition :: Number
+  , poked :: Instant
+  }
+type NoteMomentum r =
+  { targetSpeed :: Number, poked :: Instant | r }
+
+zeroMomentum :: Momentum
+zeroMomentum =
+  { tracking:
+    { note: Nothing
+    , targetSpeed: zero
+    , currentAccel: zero
+    , currentSpeed: zero
+    , currentPosition: zero
+    , poked: bottom
+    }
+  , notes: octaveRange $>
+      { targetSpeed: momentumConstants.maxSpeed
+      , poked: bottom
+      }
+  }
+
+updateMomentum :: Momentum -> Tuple (Maybe Int) Instant -> Momentum
+updateMomentum momentum (Tuple note now) =
+  let
+    { tracking, notes } =
+      updateNotes note now momentum
+  in { tracking: applyMomentum tracking now, notes }
+
+updateNotes :: Maybe Int -> Instant -> Momentum -> Momentum
+updateNotes new _ m@{ tracking: { note }} | note == new = m
+updateNotes new now { tracking, notes } =
+  { tracking: tracking { note = new, targetSpeed = accum }
+  , notes: value
+  }
+  where
+  updateNote :: Int -> Number -> NoteMomentum () -> { accum :: Number, value :: NoteMomentum () }
+  updateNote i prev =
+    case tracking.note == Just i, new == Just i of
+      true, false -> { accum: prev, value: _ } <<< momentumChange now false
+      false, true ->
+        momentumChange now true >>> \updated ->
+          { accum: updated.targetSpeed, value: updated }
+      _, _ -> { accum: prev, value: _ }
+  { accum, value } = mapAccumLWithIndex updateNote tracking.targetSpeed notes
+
+momentumChange :: forall r. Instant -> Boolean -> NoteMomentum r -> NoteMomentum r
+momentumChange now up r@{ poked } | poked == bottom =
+  r
+    { targetSpeed = if up then momentumConstants.maxSpeed else 0.0
+    , poked = now
+    }
+momentumChange now up r@{ targetSpeed: original, poked } =
+  let
+    maxSpeed = momentumConstants.maxSpeed
+    op = if up then (+) else (-)
+  in r
+    { targetSpeed = clamp 0.0 maxSpeed $ op original $
+        maxSpeed * diffRel poked now
+          (if up then momentumConstants.revive else momentumConstants.fade)
+    , poked = now
+    }
+
+applyMomentum :: Tracking -> Instant -> Tracking
+applyMomentum = flip \now -> execState do
+  poked <- gets $ \{ poked } -> if poked == bottom then now else poked
+  -- updateAccel
+  do
+    { currentSpeed, targetSpeed } <- get
+    prop (Proxy :: Proxy "currentAccel") %= \currentAccel ->
+      clamp momentumConstants.maxDecel momentumConstants.maxAccel
+        if currentSpeed < targetSpeed
+          then currentAccel + momentumConstants.maxAccel *
+            diffRel poked now momentumConstants.accel
+          else currentAccel - momentumConstants.maxAccel *
+            diffRel poked now momentumConstants.decel
+  -- updateSpeed
+  currentAccel <- gets _.currentAccel
+  do
+    prop (Proxy :: Proxy "currentSpeed") %= \currentSpeed ->
+      clamp 0.0 momentumConstants.maxSpeed $
+        currentSpeed + currentAccel * diffRel poked now (Milliseconds 1000.0)
+  -- updatePosition
+  currentSpeed <- gets _.currentSpeed
+  do
+    prop (Proxy :: Proxy "currentPosition") %= \currentPosition ->
+      currentPosition + currentSpeed * diffRel poked now (Milliseconds 1000.0)
+  -- updateTargetSpeed:
+  identity %= momentumChange now false
+
+
+
 main :: Effect Unit
 main = launchAff_ do
   dlCtx <- context
@@ -398,6 +529,7 @@ main = launchAff_ do
   log (unsafeCoerce main0)
 
   let
+    animationTime = map _.time (withTime animationFrame)
     size = 100.0
     radius = size / 2.0
     padding = 5.0
@@ -442,7 +574,7 @@ main = launchAff_ do
     drawArms =
       toPath <<< foldMapWithIndex \i -> drawArm (incr i 60.0)
 
-    rotating = map _.time (withTime animationFrame) <#> unInstant >>> unwrap >>> \t ->
+    rotating = animationTime <#> unInstant >>> unwrap >>> \t ->
       t / 1000.0 * 120.0
 
     rotateGrad = false
@@ -468,10 +600,14 @@ main = launchAff_ do
   currentNoteScores <- memoize $ sampled <#> noteScores main0
   currentNoteScoresC <- memoize $ sampled <#> noteScoresC main0
   currentNoteScores' <- memoize $ sampled <#> noteScores' main0
+  currentWhichNote <- memoize $ dedup $ currentNoteScores <#> whichNote
   currentTimbre <- memoize $ currentNoteScores' <#> calcTimbre
   currentTimbreN <- memoize $ currentTimbre <#> normalize
   currentVibe <- memoize $ currentNoteScores' <#> calcVibe
   currentVibeN <- memoize $ currentVibe <#> normalize
+  currentMomentum <- memoize $ Event.fold updateMomentum zeroMomentum $
+    sampleOnRightOp (Tuple <$> currentWhichNote) animationTime
+  currentAngle <- pure $ currentMomentum <#> _.tracking >>> _.currentPosition
 
   void $ liftEffect $ Event.subscribe currentVibe \vibe -> do
     bdy <- window >>= document >>= body
@@ -578,7 +714,7 @@ main = launchAff_ do
                       , D.X !:= show (Int.toNumber i * 20.0)
                       , D.Height <:=> map show heightC
                       , D.Y <:=> map (show <<< (240.0 - _)) heightC
-                      , D.Fill <:=> (currentNoteScores <#> whichNote >>> eq (Just i) >>> if _ then "yellow" else "green")
+                      , D.Fill <:=> (currentWhichNote <#> eq (Just i) >>> if _ then "yellow" else "green")
                       ]
                   ]
             ]
@@ -614,7 +750,7 @@ main = launchAff_ do
               , D.Width <:=> map (show <<< snd) info
               , D.Fill !:= if i == 0 then "red" else if (mod i 2) == 0 then "blue" else "gray"
               ]
-      , D.h1_ [ DC.text $ pure "..." <|> dedup (guessNote <$> currentNoteScores) ]
+      , D.h1_ [ DC.text $ pure "..." <|> dedup (maybe "?" noteName <$> currentWhichNote) ]
       , D.br_ []
       --, DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> map snd >>> noteScores main0
       , D.br_ []
@@ -668,6 +804,22 @@ main = launchAff_ do
                   ]
               ]
           ]
+      , D.div_
+        let
+          metrics = (_.tracking >>> _) <$>
+            [ _.targetSpeed >>> (_ / momentumConstants.maxSpeed)
+            , _.currentAccel >>> (_ / momentumConstants.maxAccel) >>> (_ / 2.0) >>> (_ + 0.5)
+            , _.currentSpeed >>> (_ / momentumConstants.maxSpeed)
+            ]
+        in metrics <#> \metric ->
+          flip D.input [] $ oneOf
+            [ D.Xtype !:= "range"
+            , D.Min !:= "0.0"
+            , D.Max !:= "1.0"
+            , D.Step !:= "any"
+            , D.Value <:=> do
+                (pure zeroMomentum <|> currentMomentum) <#> metric >>> show
+            ]
       , D.svg
           ( oneOf
               [ D.Width !:= show (padding + size + padding)
@@ -706,7 +858,7 @@ main = launchAff_ do
                   , D.StrokeLinecap !:= "butt"
                   , D.StrokeLinejoin !:= "miter"
                   , D.StrokeOpacity !:= "1"
-                  , rotating <#> \angle ->
+                  , currentAngle <#> \angle ->
                       D.Transform := "rotate(" <> show (Int.round $ ((angle + 30.0) % if rotateGrad then 360.0 else 60.0) - 30.0) <> ")"
                   ]
               ) $ join

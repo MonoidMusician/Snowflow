@@ -24,7 +24,7 @@ import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
-import Data.Lens ((%=))
+import Data.Lens ((%=), (.=))
 import Data.Lens.Record (prop)
 import Data.List.Types (List(..), (:))
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe, maybe')
@@ -413,7 +413,7 @@ momentumConstants ::
 momentumConstants =
   { maxAccel: 500.0
   , maxDecel: -60.0
-  , maxSpeed: 300.0
+  , maxSpeed: 360.0
   , accel: Milliseconds 1000.0
   , decel: Milliseconds 500.0
   , fade: Milliseconds 3500.0
@@ -431,9 +431,17 @@ type Tracking =
   , currentSpeed :: Number
   , currentPosition :: Number
   , poked :: Instant
+  , reversed :: Boolean
+  , reversable :: ReverseState
   }
 type NoteMomentum r =
   { targetSpeed :: Number, poked :: Instant | r }
+
+data ReverseState
+  = New
+  | Reversable
+  | Reversing
+derive instance Eq ReverseState
 
 zeroMomentum :: Momentum
 zeroMomentum =
@@ -444,6 +452,8 @@ zeroMomentum =
     , currentSpeed: zero
     , currentPosition: zero
     , poked: bottom
+    , reversed: true
+    , reversable: New
     }
   , notes: octaveRange $>
       { targetSpeed: momentumConstants.maxSpeed
@@ -498,9 +508,16 @@ applyMomentum = flip \(Tuple vol now) -> execState do
   poked <- gets $ \{ poked } -> if poked == bottom then now else poked
   -- updateAccel
   do
-    { currentSpeed, targetSpeed } <- get
+    { currentSpeed, reversable } <- get
+    targetSpeed <- gets \{ targetSpeed } ->
+      (if reversable == Reversing then negate else identity) targetSpeed
+    let
+      pct = Math.abs targetSpeed / momentumConstants.maxSpeed
+      decel = if reversable == Reversing
+        then pct * (negate momentumConstants.maxAccel) + (1.0 - pct) * momentumConstants.maxDecel
+        else momentumConstants.maxDecel
     prop (Proxy :: Proxy "currentAccel") %= \currentAccel ->
-      clamp momentumConstants.maxDecel momentumConstants.maxAccel
+      clamp decel momentumConstants.maxAccel
         if currentSpeed < min (volume * momentumConstants.maxSpeed) targetSpeed
           then currentAccel + momentumConstants.maxAccel *
             diffRel poked now momentumConstants.accel
@@ -509,14 +526,28 @@ applyMomentum = flip \(Tuple vol now) -> execState do
   -- updateSpeed
   currentAccel <- gets _.currentAccel
   do
-    prop (Proxy :: Proxy "currentSpeed") %= \currentSpeed ->
-      clamp 0.0 momentumConstants.maxSpeed $
-        currentSpeed + currentAccel * diffRel poked now (Milliseconds 1000.0)
+    { reversable } <- get
+    let delta = currentAccel * diffRel poked now (Milliseconds 1000.0)
+    naive <- gets \{ currentSpeed } -> currentSpeed + delta
+    if (naive <= 0.0 && reversable == Reversing)
+      then do
+        prop (Proxy :: Proxy "currentSpeed") .=
+          clamp 0.0 momentumConstants.maxSpeed (Math.abs naive)
+        prop (Proxy :: Proxy "reversed") %= not
+        prop (Proxy :: Proxy "reversable") .= New
+      else do
+        prop (Proxy :: Proxy "currentSpeed") .=
+          clamp 0.0 momentumConstants.maxSpeed naive
+        prop (Proxy :: Proxy "reversable") %= case _ of
+          New | naive > 0.55 * momentumConstants.maxSpeed -> Reversable
+          Reversable | naive < 0.4 * momentumConstants.maxSpeed -> Reversing
+          r -> r
   -- updatePosition
-  currentSpeed <- gets _.currentSpeed
+  { reversed, currentSpeed } <- get
   do
     prop (Proxy :: Proxy "currentPosition") %= \currentPosition ->
-      currentPosition + currentSpeed * diffRel poked now (Milliseconds 1000.0)
+      currentPosition + (if reversed then negate else identity) currentSpeed *
+        diffRel poked now (Milliseconds 1000.0)
   -- updateTargetSpeed:
   identity %= momentumChange now false
 
@@ -610,7 +641,7 @@ main = launchAff_ do
   let
     chillVibe prevs = mapWithIndex \i next ->
       let prev = fromMaybe 0.0 (prevs Array.!! i) in
-      if next > prev then 0.5 * prev + 0.5 * next else 0.8 * prev + 0.2 * next
+      if next > prev then 0.6 * prev + 0.4 * next else 0.9 * prev + 0.1 * next
   currentVibeS <- memoize $ Event.fold chillVibe [] currentVibe
   currentVolume <- memoize $ currentVibeS <#> sum >>> (_ / 80000.0) >>> clamp 0.0 1.0
   currentVibeN <- memoize $ currentVibeS <#> normalize

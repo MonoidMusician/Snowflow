@@ -356,7 +356,7 @@ gradientVibe values = "linear-gradient(" <> Array.intercalate "," (Array.reverse
     , 3.0
     , 2.5
     , 1.5
-    , 0.3
+    , 0.5
     , 0.3
     , 0.15
     , 0.15
@@ -368,7 +368,7 @@ gradientVibe values = "linear-gradient(" <> Array.intercalate "," (Array.reverse
     , "#11F0EC"
     ] >>= Array.replicate 2
   formColor c v =
-    c <> format (min 255 $ Int.floor (255.0 * v / maxScale))
+    c <> format (min 255 $ Int.floor (255.0 * Math.pow (v / maxScale) 0.7))
   components = Array.zipWith formColor colors (Array.zipWith (*) weights values)
 
 flipFlop :: forall a. Event a -> Event Boolean
@@ -451,12 +451,12 @@ zeroMomentum =
       }
   }
 
-updateMomentum :: Momentum -> Tuple (Maybe Int) Instant -> Momentum
-updateMomentum momentum (Tuple note now) =
+updateMomentum :: Momentum -> Tuple Number (Tuple (Maybe Int) Instant) -> Momentum
+updateMomentum momentum (Tuple volume (Tuple note now)) =
   let
     { tracking, notes } =
       updateNotes note now momentum
-  in { tracking: applyMomentum tracking now, notes }
+  in { tracking: applyMomentum tracking (Tuple volume now), notes }
 
 updateNotes :: Maybe Int -> Instant -> Momentum -> Momentum
 updateNotes new _ m@{ tracking: { note }} | note == new = m
@@ -492,15 +492,16 @@ momentumChange now up r@{ targetSpeed: original, poked } =
     , poked = now
     }
 
-applyMomentum :: Tracking -> Instant -> Tracking
-applyMomentum = flip \now -> execState do
+applyMomentum :: Tracking -> Tuple Number Instant -> Tracking
+applyMomentum = flip \(Tuple vol now) -> execState do
+  let volume = if vol < 0.01 then 0.0 else Math.sqrt $ clamp 0.0 1.0 $ vol * 4.0
   poked <- gets $ \{ poked } -> if poked == bottom then now else poked
   -- updateAccel
   do
     { currentSpeed, targetSpeed } <- get
     prop (Proxy :: Proxy "currentAccel") %= \currentAccel ->
       clamp momentumConstants.maxDecel momentumConstants.maxAccel
-        if currentSpeed < targetSpeed
+        if currentSpeed < min (volume * momentumConstants.maxSpeed) targetSpeed
           then currentAccel + momentumConstants.maxAccel *
             diffRel poked now momentumConstants.accel
           else currentAccel - momentumConstants.maxAccel *
@@ -596,20 +597,30 @@ main = launchAff_ do
       , smoothingTimeConstant: 0.5
       }
   sampled <- memoize $ map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
-  let sampleNormed = dedup $ lift2 (takeNormOr (6 * 9)) (sampleNorm.event <|> pure 0.5) (mapWithNorm Tuple <$> sampled <|> pure [ Tuple 0.0 0.0 ])
+  sampleNormed <- memoize $ dedup $ lift2 (takeNormOr (6 * 9)) (sampleNorm.event <|> pure 0.5) (mapWithNorm Tuple <$> sampled <|> pure [ Tuple 0.0 0.0 ])
+
   currentNoteScores <- memoize $ sampled <#> noteScores main0
   currentNoteScoresC <- memoize $ sampled <#> noteScoresC main0
   currentNoteScores' <- memoize $ sampled <#> noteScores' main0
   currentWhichNote <- memoize $ dedup $ currentNoteScores <#> whichNote
+
   currentTimbre <- memoize $ currentNoteScores' <#> calcTimbre
   currentTimbreN <- memoize $ currentTimbre <#> normalize
   currentVibe <- memoize $ currentNoteScores' <#> calcVibe
-  currentVibeN <- memoize $ currentVibe <#> normalize
+  let
+    chillVibe prevs = mapWithIndex \i next ->
+      let prev = fromMaybe 0.0 (prevs Array.!! i) in
+      if next > prev then 0.5 * prev + 0.5 * next else 0.8 * prev + 0.2 * next
+  currentVibeS <- memoize $ Event.fold chillVibe [] currentVibe
+  currentVolume <- memoize $ currentVibeS <#> sum >>> (_ / 80000.0) >>> clamp 0.0 1.0
+  currentVibeN <- memoize $ currentVibeS <#> normalize
+
   currentMomentum <- memoize $ Event.fold updateMomentum zeroMomentum $
-    sampleOnRightOp (Tuple <$> currentWhichNote) animationTime
+    sampleOnRightOp (Tuple <$> currentVolume) $
+      sampleOnRightOp (Tuple <$> currentWhichNote) animationTime
   currentAngle <- pure $ currentMomentum <#> _.tracking >>> _.currentPosition
 
-  void $ liftEffect $ Event.subscribe currentVibe \vibe -> do
+  void $ liftEffect $ Event.subscribe currentVibeS \vibe -> do
     bdy <- window >>= document >>= body
     setAttribute "style" ("background:" <> gradientVibe vibe) <<< HTMLElement.toElement # for_ bdy
 
@@ -859,7 +870,7 @@ main = launchAff_ do
                   , D.StrokeLinejoin !:= "miter"
                   , D.StrokeOpacity !:= "1"
                   , currentAngle <#> \angle ->
-                      D.Transform := "rotate(" <> show (Int.round $ ((angle + 30.0) % if rotateGrad then 360.0 else 60.0) - 30.0) <> ")"
+                      D.Transform := "rotate(" <> show (((angle + 30.0) % if rotateGrad then 360.0 else 60.0) - 30.0) <> ")"
                   ]
               ) $ join
               let

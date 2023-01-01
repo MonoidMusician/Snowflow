@@ -48,16 +48,18 @@ import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
 import Deku.Do (bind) as Deku
-import Deku.Hooks (useState)
+import Deku.Hooks (useMemoized, useState, useState')
 import Deku.Listeners (click, slider_)
 import Deku.Toplevel (runInBody) as Deku
 import Effect (Effect)
-import Effect.Aff (Milliseconds(..), launchAff_)
+import Effect.Aff (Milliseconds(..), launchAff_, makeAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
+import Effect.Exception (throw)
+import Effect.Timer (setTimeout)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior as Behavior
-import FRP.Event (Event, EventIO, keepLatest, sampleOnRight, sampleOnRight_)
+import FRP.Event (Event, EventIO, keepLatest, sampleOnRight, sampleOnRight_, withLast)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (sampleOnLeft, sampleOnRightOp)
@@ -74,8 +76,14 @@ import Snowflow.Assets (main0Url, pizzs1Url)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM.Element (setAttribute)
+import Web.DOM.Element as Element
+import Web.DOM.Node (setTextContent)
+import Web.DOM.NonElementParentNode (getElementById)
+import Web.Event.EventTarget (addEventListener, eventListener)
 import Web.HTML (window)
+import Web.HTML.Event.EventTypes as EventType
 import Web.HTML.HTMLDocument (body)
+import Web.HTML.HTMLDocument as HTMLDocument
 import Web.HTML.HTMLElement as HTMLElement
 import Web.HTML.Window (document)
 
@@ -551,15 +559,26 @@ applyMomentum = flip \(Tuple vol now) -> execState do
   -- updateTargetSpeed:
   identity %= momentumChange now false
 
+existingElement :: String -> Effect Element.Element
+existingElement id =
+  window >>= document >>= HTMLDocument.toNonElementParentNode >>>
+  getElementById id >>= maybe (throw "Missing element") pure
+
+setStatus :: String -> Effect Unit
+setStatus status = do
+  existingElement "status" >>= Element.toNode >>> setTextContent status
+
 
 
 main :: Effect Unit
 main = launchAff_ do
+  liftEffect $ setStatus "Loading samples …"
   dlCtx <- context
   pizzs1 <- decodeAudioDataFromUri dlCtx pizzs1Url
   main0 <- decodeAudioDataFromUri dlCtx main0Url
   log (unsafeCoerce main0)
   let main0len = Int.toNumber (bufferLength main0) / bufferSampleRate main0
+  liftEffect $ setStatus "Starting UI …"
 
   let
     animationTime = map _.time (withTime animationFrame)
@@ -664,6 +683,11 @@ main = launchAff_ do
   let
     ocarinaOfTime = do
       ctx <- context_
+      log $ unsafeCoerce ctx
+      for_ ["help", "title"] \id -> do
+        el <- existingElement id
+        setAttribute "style" "transition:opacity 0.5s ease-out;opacity:0" el
+        setTimeout 1000 $ liftEffect $ setAttribute "style" "display:none" el
       void $ run2 ctx
         [ Oc.analyser_ analysation
             --[ Oc.gain_ 0.15 [ Oc.sinOsc 440.0 bangOn ] ]
@@ -699,25 +723,50 @@ main = launchAff_ do
             ]
         ]
       pure ctx
+
+  liftEffect $ setStatus ""
+  liftEffect $ setAttribute "style" "" =<< existingElement "help"
+
   liftEffect $ Deku.runInBody Deku.do
     setOcarina /\ ocarina <- useState ocarinaOfTime
+    setCurrentContext /\ currentContext <- useState'
     let
       ocarinaOnlyOnce o = do
         ctx <- o
         setOcarina (pure ctx)
+        setCurrentContext ctx
         pure ctx
 
-      animationAudioTime = unsafePerformEffect $ memoize $ sampleOnRight_ ocarina animationFrame <#>
-        \o -> unsafePerformEffect (ocarinaOnlyOnce o >>= getAudioClockTime)
     setStartTime /\ startTime <- useState Nothing
+    animationAudioTime' <- useMemoized $
+      sampleOnRight_ currentContext animationFrame <#>
+        \ctx -> unsafePerformEffect (getAudioClockTime ctx)
     let
+      animationAudioTime = pure 0.0 <|> animationAudioTime'
+
       judgeTime = case _ of
         Nothing -> const 0.0
         Just (Left c) -> \s -> (s - c) / main0len
         Just (Right r) -> const (r / main0len)
-      main0Time = unsafePerformEffect $ memoize $ judgeTime <$> startTime <*> animationAudioTime
-    D.div_
-      [ D.div (D.Class !:= "scene" <|> D.Style <:=> (currentVibeS <#> \vibe -> "background:" <> gradientVibe vibe)) $ Array.reverse
+    main0Time <- useMemoized $ judgeTime <$> startTime <*> animationAudioTime
+    Array.fold
+      [ D.div (D.Id !:= "controls")
+        [ D.label_
+          [ flip D.input [] $ oneOf
+            [ D.Xtype !:= "checkbox"
+            , D.Checked !:= "false"
+            ]
+          , DC.text_ " Auto chords"
+          ]
+        , D.label_
+          [ flip D.input [] $ oneOf
+            [ D.Xtype !:= "checkbox"
+            , D.Checked !:= "false"
+            ]
+          , DC.text_ " Straight through"
+          ]
+        ]
+      , D.div (D.Class !:= "scene" <|> D.Style <:=> (currentVibeS <#> \vibe -> "background:" <> gradientVibe vibe)) $ Array.reverse
         [ D.div_ $ [1.697, 4.825, 8.424, 26.270, 28.489] <#> (_ / main0len) >>> \tRule -> flip D.hr [] $ oneOf
           [ D.Class !:= "chord"
           , pure (xdata "chord-name" "Emin")
@@ -811,215 +860,5 @@ main = launchAff_ do
                       ]
             ]
         ]
-      , D.p_ [ DC.text_ "Click on the large snowflake to start the music!" ]
-      , D.p_ [ DC.text_ "(iPhone/iPad users: turn on your ringer to hear sound.)" ]
-      , D.p_ [ DC.text_ "This slider clips the higher frequencies from the snowflake FFT display (right = all frequencies, left = just the bottom 6 arms*9 tines worth of bins):" ]
-      , flip D.input [] $ oneOf
-          [ D.Xtype !:= "range"
-          , D.Min !:= "0.0"
-          , D.Max !:= "1.0"
-          , D.Step !:= "any"
-          , D.Value !:= "0.5"
-          , slider_ sampleNorm.push
-          ]
-      , D.svg
-          ( oneOf
-              [ D.Width !:= show 240.0
-              , D.Height !:= show 240.0
-              , D.Style !:= "display:block"
-              ]
-          ) $ join $ Array.reverse
-            [ pure $ flip D.rect [] $ oneOf
-                [ D.Width !:= show 240.0
-                , D.X !:= show 0.0
-                , D.Height !:= show 1.0
-                , D.Y <:=> map (show <<< (240.0 - _)) (pure 0.0 <|> (_ / (4.0 * 100.0)) <<< sum <$> currentNoteScores)
-                , D.Fill !:= "white"
-                ]
-            , octaveRange >>= \i ->
-              let
-                height = dedup $ currentNoteScoresC # Event.filterMap \scores ->
-                  (scores !! i) <#> \{ original: score } -> Math.round $ score / 100.0
-                heightC = dedup $ currentNoteScoresC # Event.filterMap \scores ->
-                  (scores !! i) <#> \{ corrected: score } -> Math.round $ score / 100.0
-              in
-                flip D.rect [] <$>
-                  [ oneOf
-                      [ D.Width !:= show 20.0
-                      , D.X !:= show (Int.toNumber i * 20.0)
-                      , D.Height <:=> map show height
-                      , D.Y <:=> map (show <<< (240.0 - _)) height
-                      , D.Fill !:= "gray"
-                      ]
-                  , oneOf
-                      [ D.Width !:= show 20.0
-                      , D.X !:= show (Int.toNumber i * 20.0)
-                      , D.Height <:=> map show heightC
-                      , D.Y <:=> map (show <<< (240.0 - _)) heightC
-                      , D.Fill <:=> (currentWhichNote <#> eq (Just i) >>> if _ then "yellow" else "green")
-                      ]
-                  ]
-            ]
-      , D.svg
-          ( oneOf
-              [ D.Width !:= show 240.0
-              , D.Height !:= show 20.0
-              , D.Style !:= "display:block"
-              ]
-          ) $ forN maxOctave \i ->
-          let
-            info = dedup $ currentTimbreN <#> flip Array.index i >>> fromMaybe (Tuple 0.0 0.0) >>> join bimap (_ * 240.0)
-          in
-            flip D.rect [] $ oneOf
-              [ D.Height !:= show 20.0
-              , D.X <:=> map (show <<< fst) info
-              , D.Width <:=> map (show <<< snd) info
-              , D.Fill !:= if i == 0 then "red" else if (mod i 2) == 0 then "blue" else "gray"
-              ]
-      , D.svg
-          ( oneOf
-              [ D.Width !:= show 240.0
-              , D.Height !:= show 20.0
-              , D.Style !:= "display:block"
-              ]
-          ) $ forN maxOctave \i ->
-          let
-            info = dedup $ currentVibeN <#> flip Array.index i >>> fromMaybe (Tuple 0.0 0.0) >>> join bimap (_ * 240.0)
-          in
-            flip D.rect [] $ oneOf
-              [ D.Height !:= show 20.0
-              , D.X <:=> map (show <<< fst) info
-              , D.Width <:=> map (show <<< snd) info
-              , D.Fill !:= if i == 0 then "red" else if (mod i 2) == 0 then "blue" else "gray"
-              ]
-      , D.h1_ [ DC.text $ pure "..." <|> dedup (maybe "?" noteName <$> currentWhichNote) ]
-      , D.br_ []
-      --, DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> map snd >>> noteScores main0
-      , D.br_ []
-      --, DC.text $ map (show <<< map Int.round) $ (sampleOnLeft_ (interval 1000) sampled) <#> map snd
-      , D.br_ []
-      , D.svg
-          ( oneOf
-              [ D.Width !:= show (padding + 2.0 * size + padding)
-              , D.Height !:= show (padding + 2.0 * size + padding)
-              , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
-              , click $ (Tuple <$> startTime <*> ocarina) <#> \(st /\ o) -> do
-                  ctx <- ocarinaOnlyOnce o
-                  timeNow <- getAudioClockTime ctx
-                  let
-                    judgeRestart :: forall x. _ -> (_ -> x) -> (_ -> x) -> x
-                    judgeRestart b l r = let t = timeNow - b in if t > main0len then l t else r t
-                  let
-                    newStartTime = case st of
-                      Nothing -> Just 0.0
-                      Just (Right a) -> Just a
-                      Just (Left b) -> judgeRestart b (const $ Just 0.0) (const Nothing)
-                  setStartTime
-                    ( Just case st of
-                        Nothing -> Left timeNow
-                        Just (Right a) -> Left (timeNow - a)
-                        Just (Left b) -> judgeRestart b (const $ Left timeNow) Right
-                    )
-                  for_ newStartTime leftSnowflakeStartTime.push
-                  leftSnowflakePlaying.push (isJust newStartTime)
-              ]
-          )
-          [ D.g
-              ( oneOf
-                  [ D.Fill !:= "#bfe6ff"
-                  , D.StrokeLinecap !:= "butt"
-                  , D.StrokeLinejoin !:= "miter"
-                  , D.StrokeOpacity !:= "1"
-                  ]
-              ) $ join
-              [ pure $ flip D.path [] $ oneOf
-                  [ D.D <:=> do
-                      dedup $ (pure [ Tuple 0.0 0.0 ] <|> sampleNormed) <#> \freqs ->
-                        let
-                          segmented = segment 6 9 $ freqs <#> uncurry \i -> (_ / (32.0 - i * 24.0))
-                        in
-                          drawArms (distr (join Tuple segmented))
-                  , D.FillOpacity !:= ".91"
-                  , D.Stroke !:= if useStroke then "url(#linearGradientArm)" else "none"
-                  , D.StrokeWidth !:= "0.6"
-                  , D.Filter !:= if useFilter then "url(#filter17837)" else "none"
-                  ]
-              ]
-          ]
-      , D.div_
-        let
-          metrics = (_.tracking >>> _) <$>
-            [ _.targetSpeed >>> (_ / momentumConstants.maxSpeed)
-            , _.currentAccel >>> (_ / momentumConstants.maxAccel) >>> (_ / 2.0) >>> (_ + 0.5)
-            , _.currentSpeed >>> (_ / momentumConstants.maxSpeed)
-            ]
-        in metrics <#> \metric ->
-          flip D.input [] $ oneOf
-            [ D.Xtype !:= "range"
-            , D.Min !:= "0.0"
-            , D.Max !:= "1.0"
-            , D.Step !:= "any"
-            , D.Value <:=> do
-                (pure zeroMomentum <|> currentMomentum) <#> metric >>> show
-            ]
-      , D.svg
-          ( oneOf
-              [ D.Width !:= show (padding + size + padding)
-              , D.Height !:= show (padding + size + padding)
-              , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
-              , D.OnMousedown <:=> do
-                  ocarina <#> \o -> do
-                    void $ ocarinaOnlyOnce o
-                    rightSnowflakeBang.push unit
-              ]
-          )
-          [ D.defs_
-              [ D.linearGradient
-                  ( oneOf
-                      [ D.Id !:= "linearGradientArm"
-                      , D.GradientUnits !:= "userSpaceOnUse"
-                      , keepLatest $ (if rotateGrad then rotating else pure 0.0) <#> \angle ->
-                          line (rotate angle (Tuple 0.0 radius)) (rotate angle (Tuple 0.0 (negate radius)))
-                      ]
-                  )
-                  [ flip D.stop [] $ oneOf
-                      [ D.Offset !:= "0"
-                      , D.StopColor !:= "#6b91ab"
-                      , D.StopOpacity !:= "0.9"
-                      ]
-                  , flip D.stop [] $ oneOf
-                      [ D.Offset !:= "1"
-                      , D.StopColor !:= "#f3feff"
-                      , D.StopOpacity !:= "0.95"
-                      ]
-                  ]
-              ]
-          , D.g
-              ( oneOf
-                  [ D.Fill !:= "#bfe6ff"
-                  , D.StrokeLinecap !:= "butt"
-                  , D.StrokeLinejoin !:= "miter"
-                  , D.StrokeOpacity !:= "1"
-                  , currentAngle <#> \angle ->
-                      D.Transform := "rotate(" <> show (((angle + 30.0) % if rotateGrad then 360.0 else 60.0) - 30.0) <> ")"
-                  ]
-              ) $ join
-              let
-                v = 3.0
-              in
-                let
-                  vs = [ 1.0, v, v, 6.0, 4.0, 4.0, 5.0, v, 1.0 ]
-                in
-                  let
-                    vss = join Tuple vs
-                  in
-                    [ pure $ flip D.path [] $ oneOf
-                        [ D.D !:= drawArms [ vss, vss, vss, vss, vss, vss ]
-                        , D.FillOpacity !:= ".91"
-                        , D.Stroke !:= if useStroke then "url(#linearGradientArm)" else "none"
-                        , D.StrokeWidth !:= "0.6"
-                        , D.Filter !:= if useFilter then "url(#filter17837)" else "none"
-                        ]
-                    ]
-          ]
       ]
+  liftEffect $ setStatus ""

@@ -1,15 +1,21 @@
 <html>
   <head>
-    <link rel="stylesheet" href="style.css" />
     <style>
       html,
       body {
         background: #00002a;
-        color: white;
+        color: #fff0fa;
         margin: 0;
         padding: 0;
+        font-family: sans-serif;
       }
     </style>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="/index.js" defer></script>
+  </head>
+  <body>
     <svg
       xmlns="http://www.w3.org/2000/svg"
       xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -236,6 +242,13 @@
         </filter>
       </defs>
     </svg>
-    <script type="module" src="/index.js" defer></script>
-  </head>
+    <h1 id="title">Snowflow<br/>by <a href="https://github.com/MonoidMusician">Verity</a></h1>
+    <div id="status">Loading page …</div>
+    <div id="help" style="display:none">
+      <p>Click on the snowflake to start accompanying it on its journey.</p>
+      <p>As the snowflake’s center passes each string, play the chord by tapping on it.</p>
+      <p><del>Click in the middle of each string for a mellow sound, near the edges for an edgier sound.</del></p>
+      <p><del>At the end of each phrase you may choose to return to a previous phrase, continue on to the next phrase, or skip ahead.</del></p>
+    </div>
+  </body>
 </html>

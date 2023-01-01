@@ -44,7 +44,7 @@ import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested ((/\))
 import Data.UInt as UInt
 import Debug (spy)
-import Deku.Attribute ((!:=), (:=), (<:=>))
+import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
 import Deku.Do (bind) as Deku
@@ -57,15 +57,15 @@ import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior as Behavior
-import FRP.Event (Event, EventIO, keepLatest, sampleOnRight)
+import FRP.Event (Event, EventIO, keepLatest, sampleOnRight, sampleOnRight_)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
-import FRP.Event.Class (sampleOnRightOp)
+import FRP.Event.Class (sampleOnLeft, sampleOnRightOp)
 import FRP.Event.Time (withTime)
 import Ocarina.Control (gain_)
 import Ocarina.Control as Oc
 import Ocarina.Core (Po2(..), bangOn, sound, silence, dyn)
-import Ocarina.Interpret (bufferSampleRate, context, context_, decodeAudioDataFromUri, getAudioClockTime, getByteFrequencyData)
+import Ocarina.Interpret (bufferLength, bufferSampleRate, context, context_, decodeAudioDataFromUri, getAudioClockTime, getByteFrequencyData)
 import Ocarina.Run (run2)
 import Ocarina.WebAPI (AnalyserNodeCb(..), BrowserAudioBuffer)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
@@ -350,7 +350,7 @@ gradientVibe values = "linear-gradient(" <> Array.intercalate "," (Array.reverse
   format :: Int -> String
   format = Int.toStringAs Int.hexadecimal >>> \s ->
     (power "0" (2 - String.length s)) <> s
-  maxScale = 10000.0
+  maxScale = 12000.0
   weights =
     [ 3.5
     , 3.0
@@ -559,6 +559,7 @@ main = launchAff_ do
   pizzs1 <- decodeAudioDataFromUri dlCtx pizzs1Url
   main0 <- decodeAudioDataFromUri dlCtx main0Url
   log (unsafeCoerce main0)
+  let main0len = Int.toNumber (bufferLength main0) / bufferSampleRate main0
 
   let
     animationTime = map _.time (withTime animationFrame)
@@ -651,10 +652,6 @@ main = launchAff_ do
       sampleOnRightOp (Tuple <$> currentWhichNote) animationTime
   currentAngle <- pure $ currentMomentum <#> _.tracking >>> _.currentPosition
 
-  void $ liftEffect $ Event.subscribe currentVibeS \vibe -> do
-    bdy <- window >>= document >>= body
-    setAttribute "style" ("background:" <> gradientVibe vibe) <<< HTMLElement.toElement # for_ bdy
-
   -- as the page is fully interactive audio from the get-go, we
   -- never want to recreate audio contexts
   -- to that end, we create a single audio context and initialize it
@@ -709,9 +706,112 @@ main = launchAff_ do
         ctx <- o
         setOcarina (pure ctx)
         pure ctx
+
+      animationAudioTime = unsafePerformEffect $ memoize $ sampleOnRight_ ocarina animationFrame <#>
+        \o -> unsafePerformEffect (ocarinaOnlyOnce o >>= getAudioClockTime)
     setStartTime /\ startTime <- useState Nothing
-    D.div_ $ join $ Array.replicate 1
-      [ D.p_ [ DC.text_ "Click on the large snowflake to start the music!" ]
+    let
+      judgeTime = case _ of
+        Nothing -> const 0.0
+        Just (Left c) -> \s -> (s - c) / main0len
+        Just (Right r) -> const (r / main0len)
+      main0Time = unsafePerformEffect $ memoize $ judgeTime <$> startTime <*> animationAudioTime
+    D.div_
+      [ D.div (D.Class !:= "scene" <|> D.Style <:=> (currentVibeS <#> \vibe -> "background:" <> gradientVibe vibe)) $ Array.reverse
+        [ D.div_ $ [1.697, 4.825, 8.424, 26.270, 28.489] <#> (_ / main0len) >>> \tRule -> flip D.hr [] $ oneOf
+          [ D.Class !:= "chord"
+          , pure (xdata "chord-name" "Emin")
+          , D.OnMousedown <:=> do
+              ocarina <#> \o -> do
+                void $ ocarinaOnlyOnce o
+                rightSnowflakeBang.push unit
+          , D.Style <:=> do
+              let pct v = "calc(" <> show ((2.0 * tRule - v) * 100.0) <> "% - " <> show ((v - 0.5) * size) <> "px)"
+              dedup main0Time <#> clamp 0.0 1.0 >>>
+                \t -> "position: absolute; left: 0; top: " <> pct t <> "; width: 100vw; height: 1px"
+          ]
+        , D.svg
+            ( oneOf
+                [ D.Width !:= show (padding + size + padding)
+                , D.Height !:= show (padding + size + padding)
+                , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
+                , click $ (Tuple <$> startTime <*> ocarina) <#> \(st /\ o) -> do
+                    ctx <- ocarinaOnlyOnce o
+                    timeNow <- getAudioClockTime ctx
+                    let
+                      judgeRestart :: forall x. _ -> (_ -> x) -> (_ -> x) -> x
+                      judgeRestart b l r = let t = timeNow - b in if t > main0len then l t else r t
+                    let
+                      newStartTime = case st of
+                        Nothing -> Just 0.0
+                        Just (Right a) -> Just a
+                        Just (Left b) -> judgeRestart b (const $ Just 0.0) (const Nothing)
+                    setStartTime
+                      ( Just case st of
+                          Nothing -> Left timeNow
+                          Just (Right a) -> Left (timeNow - a)
+                          Just (Left b) -> judgeRestart b (const $ Left timeNow) Right
+                      )
+                    for_ newStartTime leftSnowflakeStartTime.push
+                    leftSnowflakePlaying.push (isJust newStartTime)
+                , D.Style <:=> do
+                    let pct v = "calc(" <> show (v * 100.0) <> "% - " <> show (v * size) <> "px)"
+                    let centered = pct 0.5
+                    dedup main0Time <#> clamp 0.0 1.0 >>>
+                      \t -> "position: absolute; left: " <> centered <> "; top: " <> pct t <> ";"
+                ]
+            )
+            [ D.defs_
+                [ D.linearGradient
+                    ( oneOf
+                        [ D.Id !:= "linearGradientArm"
+                        , D.GradientUnits !:= "userSpaceOnUse"
+                        , keepLatest $ (if rotateGrad then rotating else pure 0.0) <#> \angle ->
+                            line (rotate angle (Tuple 0.0 radius)) (rotate angle (Tuple 0.0 (negate radius)))
+                        ]
+                    )
+                    [ flip D.stop [] $ oneOf
+                        [ D.Offset !:= "0"
+                        , D.StopColor !:= "#6b91ab"
+                        , D.StopOpacity !:= "0.9"
+                        ]
+                    , flip D.stop [] $ oneOf
+                        [ D.Offset !:= "1"
+                        , D.StopColor !:= "#f3feff"
+                        , D.StopOpacity !:= "0.95"
+                        ]
+                    ]
+                ]
+            , D.g
+                ( oneOf
+                    [ D.Fill !:= "#bfe6ff"
+                    , D.StrokeLinecap !:= "butt"
+                    , D.StrokeLinejoin !:= "miter"
+                    , D.StrokeOpacity !:= "1"
+                    , currentAngle <#> \angle ->
+                        D.Transform := "rotate(" <> show (((angle + 30.0) % if rotateGrad then 360.0 else 60.0) - 30.0) <> ")"
+                    ]
+                ) $ join
+                let
+                  v = 3.0
+                in
+                  let
+                    vs = [ 1.0, v, v, 6.0, 4.0, 4.0, 5.0, v, 1.0 ]
+                  in
+                    let
+                      vss = join Tuple vs
+                    in
+                      [ pure $ flip D.path [] $ oneOf
+                          [ D.D !:= drawArms [ vss, vss, vss, vss, vss, vss ]
+                          , D.FillOpacity !:= ".91"
+                          , D.Stroke !:= if useStroke then "url(#linearGradientArm)" else "none"
+                          , D.StrokeWidth !:= "0.6"
+                          , D.Filter !:= if useFilter then "url(#filter17837)" else "none"
+                          ]
+                      ]
+            ]
+        ]
+      , D.p_ [ DC.text_ "Click on the large snowflake to start the music!" ]
       , D.p_ [ DC.text_ "(iPhone/iPad users: turn on your ringer to hear sound.)" ]
       , D.p_ [ DC.text_ "This slider clips the higher frequencies from the snowflake FFT display (right = all frequencies, left = just the bottom 6 arms*9 tines worth of bins):" ]
       , flip D.input [] $ oneOf
@@ -808,7 +908,7 @@ main = launchAff_ do
                   timeNow <- getAudioClockTime ctx
                   let
                     judgeRestart :: forall x. _ -> (_ -> x) -> (_ -> x) -> x
-                    judgeRestart b l r = let t = timeNow - b in if t > 34.0 then l t else r t
+                    judgeRestart b l r = let t = timeNow - b in if t > main0len then l t else r t
                   let
                     newStartTime = case st of
                       Nothing -> Just 0.0

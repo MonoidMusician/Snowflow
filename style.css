@@ -24,3 +24,27 @@
 .divvy > :nth-child(4n) {
   background: yellow;
 }
+.scene {
+  width: 100vw;
+  height: 100vh;
+}
+.chord {
+  border: none;
+  margin-top: -25px;
+  padding-top: 25px;
+  padding-bottom: 25px;
+}
+.chord::after {
+  content: '';
+  position: absolute;
+  top: calc(50% + 2px);
+  width: 100%;
+  border-bottom: 1px solid #fff4;
+}
+.chord::before {
+  content: attr(data-chord-name);
+  position: absolute;
+  bottom: 25px;
+  left: 0.2em;
+  font-family: sans-serif;
+}

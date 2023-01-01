@@ -4,12 +4,10 @@ import Prelude
 
 import CSS.Color (Color)
 import Control.Alt ((<|>))
-import Control.Apply (lift2)
 import Control.Monad.ST as ST
 import Control.Monad.State (execState, get, gets)
 import Control.Plus (empty)
 import Data.Align (align)
-import Data.Array ((!!))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Array.ST as ArrayST
@@ -40,29 +38,28 @@ import Data.String.CodeUnits as CodeUnits
 import Data.These (These(..), these)
 import Data.Traversable (traverse)
 import Data.TraversableWithIndex (mapAccumLWithIndex)
-import Data.Tuple (Tuple(..), fst, snd, uncurry)
+import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
 import Data.UInt as UInt
-import Debug (spy)
 import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
 import Deku.Do (bind) as Deku
 import Deku.Hooks (useMemoized, useState, useState')
-import Deku.Listeners (click, slider_)
+import Deku.Listeners (click)
 import Deku.Toplevel (runInBody) as Deku
 import Effect (Effect)
-import Effect.Aff (Milliseconds(..), launchAff_, makeAff)
+import Effect.Aff (Milliseconds(..), launchAff_)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (throw)
 import Effect.Timer (setTimeout)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior as Behavior
-import FRP.Event (Event, EventIO, keepLatest, sampleOnRight, sampleOnRight_, withLast)
+import FRP.Event (Event, EventIO, keepLatest, sampleOnRight, sampleOnRight_)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
-import FRP.Event.Class (sampleOnLeft, sampleOnRightOp)
+import FRP.Event.Class (sampleOnRightOp)
 import FRP.Event.Time (withTime)
 import Ocarina.Control (gain_)
 import Ocarina.Control as Oc
@@ -79,12 +76,8 @@ import Web.DOM.Element (setAttribute)
 import Web.DOM.Element as Element
 import Web.DOM.Node (setTextContent)
 import Web.DOM.NonElementParentNode (getElementById)
-import Web.Event.EventTarget (addEventListener, eventListener)
 import Web.HTML (window)
-import Web.HTML.Event.EventTypes as EventType
-import Web.HTML.HTMLDocument (body)
 import Web.HTML.HTMLDocument as HTMLDocument
-import Web.HTML.HTMLElement as HTMLElement
 import Web.HTML.Window (document)
 
 smul :: forall f a. Bifunctor f => Semiring a => a -> f a a -> f a a
@@ -264,7 +257,7 @@ bisum :: forall a. Semiring a => These a a -> a
 bisum = unwrap <<< bifoldMap Additive Additive
 
 overtoneCorrection0 :: Array { note :: Int, octave :: Int, harmonic :: Int, weight :: Number }
-overtoneCorrection0 = spy "overtoneCorrection0" $ Array.fold $ forN (Int.pow 2 6 - 1) \harmonic ->
+overtoneCorrection0 = Array.fold $ forN (Int.pow 2 6 - 1) \harmonic ->
   if harmonic < 2 || harmonic `mod` 2 == 0 then mempty
   else
     let
@@ -634,7 +627,6 @@ main = launchAff_ do
     useFilter = false
 
   analyserE <- liftEffect Event.create
-  sampleNorm <- liftEffect Event.create
   let
     analyserB = Behavior.behavior \e ->
       Event.filterMap identity
@@ -648,15 +640,11 @@ main = launchAff_ do
       , smoothingTimeConstant: 0.5
       }
   sampled <- memoize $ map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
-  sampleNormed <- memoize $ dedup $ lift2 (takeNormOr (6 * 9)) (sampleNorm.event <|> pure 0.5) (mapWithNorm Tuple <$> sampled <|> pure [ Tuple 0.0 0.0 ])
 
   currentNoteScores <- memoize $ sampled <#> noteScores main0
-  currentNoteScoresC <- memoize $ sampled <#> noteScoresC main0
   currentNoteScores' <- memoize $ sampled <#> noteScores' main0
   currentWhichNote <- memoize $ dedup $ currentNoteScores <#> whichNote
 
-  currentTimbre <- memoize $ currentNoteScores' <#> calcTimbre
-  currentTimbreN <- memoize $ currentTimbre <#> normalize
   currentVibe <- memoize $ currentNoteScores' <#> calcVibe
   let
     chillVibe prevs = mapWithIndex \i next ->
@@ -664,7 +652,6 @@ main = launchAff_ do
       if next > prev then 0.6 * prev + 0.4 * next else 0.9 * prev + 0.1 * next
   currentVibeS <- memoize $ Event.fold chillVibe [] currentVibe
   currentVolume <- memoize $ currentVibeS <#> sum >>> (_ / 80000.0) >>> clamp 0.0 1.0
-  currentVibeN <- memoize $ currentVibeS <#> normalize
 
   currentMomentum <- memoize $ Event.fold updateMomentum zeroMomentum $
     sampleOnRightOp (Tuple <$> currentVolume) $

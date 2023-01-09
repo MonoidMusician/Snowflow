@@ -27,7 +27,7 @@ import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (Behavior)
 import FRP.Behavior as Behavior
-import FRP.Event (Event, create, filterMap, keepLatest, mailboxed, sampleOnRight, withLast)
+import FRP.Event (Event, create, filterMap, keepLatest, mailboxed, mapAccum, sampleOnRight, withLast)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import Ocarina.Control as Oc
@@ -313,29 +313,26 @@ newtype SoundGroup k = SoundGroup
 
 newSoundGroup :: forall k. Ord k => Effect (SoundGroup k)
 newSoundGroup = do
-  seen <- Ref.new Set.empty
-  added <- create
   bus <- create
+  let
+    added = filterMap identity $
+      mapAccum addition Set.empty bus.event
+    addition existing new = Tuple (Set.insert new.address existing)
+      (new <$ guard (not Set.member new.address existing))
   pure $ SoundGroup
     { push: \address payload -> do
         bus.push { address, payload }
-        seenSoFar <- Ref.read seen
-        -- We fire added afterwards, since if we push to the bus it won't
-        -- register until Bolson processes the node anyways
-        when (not Set.member address seenSoFar) do
-          Ref.write (Set.insert address seenSoFar) seen
-          added.push { address, payload }
-    , added: added.event <#> \{ address, payload } ->
+    , added: added <#> \{ address, payload } ->
         pure payload <|> filterMap (\r -> if r.address == address then Just r.payload else Nothing) bus.event
     }
 
 embedSoundGroup :: forall k outputChannels lock payload. SoundGroup k -> Audible outputChannels lock payload
 embedSoundGroup (SoundGroup { added }) =
-  Ocarina.dyn $ map emitSound <$> added
+  Ocarina.dyn $ pure <<< OC.sound <<< switcher emitSound <$> added
   where
-  emitSound :: SoundInstruction -> AudibleChild outputChannels lock payload
-  emitSound Nothing = OC.silence
-  emitSound (Just config) = OC.sound $ Oc.playBuf config bangOn
+  emitSound :: SoundInstruction -> Audible outputChannels lock payload
+  emitSound Nothing = Oc.silence
+  emitSound (Just config) = Oc.playBuf config bangOn
 
 setSound :: forall k. SoundGroup k -> k -> SoundInstruction -> Effect Unit
 setSound (SoundGroup { push }) = push

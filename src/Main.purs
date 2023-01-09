@@ -6,7 +6,6 @@ import CSS.Color (Color)
 import Control.Alt ((<|>))
 import Control.Monad.ST as ST
 import Control.Monad.State (execState, get, gets)
-import Control.Plus (empty)
 import Data.Align (align)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
@@ -16,8 +15,7 @@ import Data.Bifoldable (bifoldMap)
 import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
 import Data.DateTime.Instant (Instant, unInstant)
 import Data.DateTime.Instant as Instant
-import Data.Either (Either(..))
-import Data.Foldable (class Foldable, foldl, for_, maximumBy, oneOf, sum)
+import Data.Foldable (class Foldable, foldl, for_, maximumBy, oneOf, sum, traverse_)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -25,7 +23,7 @@ import Data.Int as Int
 import Data.Lens ((%=), (.=))
 import Data.Lens.Record (prop)
 import Data.List.Types (List(..), (:))
-import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe, maybe')
+import Data.Maybe (Maybe(..), fromMaybe, maybe, maybe')
 import Data.Monoid (power)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (un, unwrap)
@@ -39,46 +37,42 @@ import Data.These (These(..), these)
 import Data.Traversable (traverse)
 import Data.TraversableWithIndex (mapAccumLWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
-import Data.Tuple.Nested ((/\))
 import Data.UInt as UInt
 import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
 import Deku.Do (bind) as Deku
-import Deku.Hooks (useMemoized, useState, useState')
-import Deku.Listeners (click)
+import Deku.Hooks (useMemoized)
+import Deku.Listeners (click_)
 import Deku.Toplevel (runInBody) as Deku
 import Effect (Effect)
-import Effect.Aff (Milliseconds(..), launchAff_, makeAff)
+import Effect.Aff (Canceler(..), Milliseconds(..), launchAff_, makeAff)
 import Effect.Class (class MonadEffect, liftEffect)
-import Effect.Class.Console (log)
 import Effect.Exception (throw)
+import Effect.Ref as Ref
 import Effect.Timer (setTimeout)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior as Behavior
-import FRP.Event (Event, EventIO, keepLatest, sampleOnRight, sampleOnRight_)
+import FRP.Event (Event, keepLatest, sampleOnRight)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (sampleOnRightOp)
 import FRP.Event.Time (withTime)
-import Ocarina.Control (gain_)
 import Ocarina.Control as Oc
-import Ocarina.Core (Po2(..), bangOn, sound, silence, dyn)
-import Ocarina.Interpret (bufferLength, bufferSampleRate, context, context_, decodeAudioDataFromUri, getAudioClockTime, getByteFrequencyData)
+import Ocarina.Core (Po2(..))
+import Ocarina.Interpret (bufferSampleRate, context, getByteFrequencyData)
 import Ocarina.Run (run2)
 import Ocarina.WebAPI (AnalyserNodeCb(..), BrowserAudioBuffer)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import QualifiedDo.Alt as Alt
 import Snowflow.Assets (main0Url, pizzs1Url)
-import Snowflow.SoundManager (embedSoundGroup, inGroup, instantiate, listen, loadSound, newManager, newSoundGroup, restart, soundOffsetNorm, toggle)
+import Snowflow.SoundManager (SoundManager(..), embedSoundGroup, inGroup, instantiate, listen, loadSound, newManager, newSoundGroup, restart, soundOffsetNorm, toggle)
 import Type.Proxy (Proxy(..))
-import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM.Element (setAttribute)
 import Web.DOM.Element as Element
 import Web.DOM.Node (setTextContent)
 import Web.DOM.NonElementParentNode (getElementById)
-import Web.Event.Event (EventType(..))
-import Web.Event.EventTarget (addEventListener, eventListener)
+import Web.Event.Event (EventType(..), preventDefault)
+import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument (body)
 import Web.HTML.HTMLDocument as HTMLDocument
@@ -571,22 +565,31 @@ setStatus status = do
 main :: Effect Unit
 main = launchAff_ do
   liftEffect $ setStatus "Click to load samples"
-  makeAff \cb -> do
-    listener <- eventListener \_ -> cb (pure unit)
+  dlCtx <- makeAff \cb -> do
+    listeners <- Ref.new []
+    let
+      cleanup = Ref.read listeners >>= traverse_ \r -> r
+      ret = cleanup *> (cb <<< pure =<< context)
+    listener <- eventListener \_ -> ret
     tgt <- window >>= document >>= body >>= maybe (throw "missing body") pure
     addEventListener (EventType "click") listener false (HTMLElement.toEventTarget tgt)
-    pure mempty
+    listener2 <- eventListener \e -> preventDefault e *> ret
+    tgt2 <- existingElement "title"
+    addEventListener (EventType "click") listener2 false (Element.toEventTarget tgt2)
+    Ref.write
+      [ removeEventListener (EventType "click") listener false (HTMLElement.toEventTarget tgt)
+      , removeEventListener (EventType "click") listener2 false (Element.toEventTarget tgt2)
+      ] listeners
+    pure $ Canceler \_ -> liftEffect cleanup
   liftEffect $ setStatus "Loading samples …"
-  dlCtx <- context
   soundManager <- liftEffect $ newManager (Just dlCtx)
+  liftEffect $ setStatus "Loading sample 0/1 …"
   pizzs1M <- loadSound soundManager pizzs1Url
+  liftEffect $ setStatus "Loading sample 1/1 …"
   main0M <- loadSound soundManager main0Url
   main0I <- liftEffect $ instantiate main0M
   soundGroup <- liftEffect newSoundGroup
-  pizzs1 <- decodeAudioDataFromUri dlCtx pizzs1Url
-  main0 <- decodeAudioDataFromUri dlCtx main0Url
-  log (unsafeCoerce main0)
-  let main0len = Int.toNumber (bufferLength main0) / bufferSampleRate main0
+  let main0len = main0M.duration
   liftEffect $ setStatus "Starting UI …"
 
   let
@@ -640,7 +643,7 @@ main = launchAff_ do
 
     rotateGrad = false
     useStroke = false
-    useFilter = true
+    useFilter = false
 
   analyserE <- liftEffect Event.create
   let
@@ -657,8 +660,8 @@ main = launchAff_ do
       }
   sampled <- memoize $ map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
 
-  currentNoteScores <- memoize $ sampled <#> noteScores main0
-  currentNoteScores' <- memoize $ sampled <#> noteScores' main0
+  currentNoteScores <- memoize $ sampled <#> noteScores main0M.buffer
+  currentNoteScores' <- memoize $ sampled <#> noteScores' main0M.buffer
   currentWhichNote <- memoize $ dedup $ currentNoteScores <#> whichNote
 
   currentVibe <- memoize $ currentNoteScores' <#> calcVibe
@@ -674,70 +677,26 @@ main = launchAff_ do
       sampleOnRightOp (Tuple <$> currentWhichNote) animationTime
   currentAngle <- pure $ currentMomentum <#> _.tracking >>> _.currentPosition
 
-  -- as the page is fully interactive audio from the get-go, we
-  -- never want to recreate audio contexts
-  -- to that end, we create a single audio context and initialize it
-  -- on the first click, making sure it is initialized right away
-  -- so that there are no issues on iOS
-  -- from then, we use it for the rest of the app
-  leftSnowflakeStartTime :: EventIO Number <- liftEffect $ Event.create
-  leftSnowflakePlaying :: EventIO Boolean <- liftEffect $ Event.create
+  started <- liftEffect $ Ref.new false
   let
-    ocarinaOfTime = do
-      ctx <- context_
-      log $ unsafeCoerce ctx
+    ocarinaOfTime = whenM (not <$> Ref.read started) do
+      Ref.write true started
+      let
+        ctx = case soundManager of
+          SoundManager { context } -> context
       for_ ["help", "title"] \id -> do
         el <- existingElement id
         setAttribute "style" "transition:opacity 0.5s ease-out;opacity:0" el
         setTimeout 1000 $ liftEffect $ setAttribute "style" "display:none" el
       void $ run2 ctx
         [ Oc.analyser_ analysation
-            --[ Oc.gain_ 0.15 [ Oc.sinOsc 440.0 bangOn ] ]
-            [ dyn
-                    ( map
-                        ( \{ startTime, io } ->
-
-                            if io then
-                              Alt.do
-                                leftSnowflakePlaying.event $> silence
-                                pure $ sound
-                                  $ Oc.playBuf
-                                      { buffer: main0, bufferOffset: startTime }
-                                      bangOn
-                            else empty
-
-                        )
-                        ({ startTime: _, io: _ } <$> leftSnowflakeStartTime.event <*> leftSnowflakePlaying.event)
-                    )
-            , embedSoundGroup soundGroup
-            ]
+            [ embedSoundGroup soundGroup ]
         ]
-      pure ctx
 
   liftEffect $ setStatus ""
   liftEffect $ setAttribute "style" "" =<< existingElement "help"
 
   liftEffect $ Deku.runInBody Deku.do
-    setOcarina /\ ocarina <- useState ocarinaOfTime
-    setCurrentContext /\ currentContext <- useState'
-    let
-      ocarinaOnlyOnce o = do
-        ctx <- o
-        setOcarina (pure ctx)
-        setCurrentContext ctx
-        pure ctx
-
-    setStartTime /\ startTime <- useState Nothing
-    animationAudioTime' <- useMemoized $
-      sampleOnRight_ currentContext animationFrame <#>
-        \ctx -> unsafePerformEffect (getAudioClockTime ctx)
-    let
-      animationAudioTime = pure 0.0 <|> animationAudioTime'
-
-      judgeTime = case _ of
-        Nothing -> const 0.0
-        Just (Left c) -> \s -> (s - c) / main0len
-        Just (Right r) -> const (r / main0len)
     main0Time <- useMemoized $ listen $ soundOffsetNorm main0I
     Array.fold
       [ D.div (D.Id !:= "controls")
@@ -760,10 +719,8 @@ main = launchAff_ do
         [ D.div_ $ [1.697, 4.825, 8.424, 26.270, 28.489] <#> (_ / main0len) >>> \tRule -> flip D.hr [] $ oneOf
           [ D.Class !:= "chord"
           , pure (xdata "chord-name" "Emin")
-          , D.OnMousedown <:=> do
-              ocarina <#> \o -> do
-                void $ ocarinaOnlyOnce o
-                inGroup soundGroup restart =<< instantiate pizzs1M
+          , D.OnMousedown !:= do
+              ocarinaOfTime *> do inGroup soundGroup restart =<< instantiate pizzs1M
           , D.Style <:=> do
               let pct v = "calc(" <> show ((2.0 * tRule - v) * 100.0) <> "% - " <> show ((v - 0.5) * size) <> "px)"
               dedup main0Time <#> clamp 0.0 1.0 >>>
@@ -774,27 +731,7 @@ main = launchAff_ do
                 [ D.Width !:= show (padding + size + padding)
                 , D.Height !:= show (padding + size + padding)
                 , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
-                , click $ (Tuple <$> startTime <*> ocarina) <#> \(st /\ o) -> do
-                    ctx <- ocarinaOnlyOnce o
-                    when false do
-                      timeNow <- getAudioClockTime ctx
-                      let
-                        judgeRestart :: forall x. _ -> (_ -> x) -> (_ -> x) -> x
-                        judgeRestart b l r = let t = timeNow - b in if t > main0len then l t else r t
-                      let
-                        newStartTime = case st of
-                          Nothing -> Just 0.0
-                          Just (Right a) -> Just a
-                          Just (Left b) -> judgeRestart b (const $ Just 0.0) (const Nothing)
-                      setStartTime
-                        ( Just case st of
-                            Nothing -> Left timeNow
-                            Just (Right a) -> Left (timeNow - a)
-                            Just (Left b) -> judgeRestart b (const $ Left timeNow) Right
-                        )
-                      for_ newStartTime leftSnowflakeStartTime.push
-                      leftSnowflakePlaying.push (isJust newStartTime)
-                    inGroup soundGroup toggle main0I
+                , click_ $ ocarinaOfTime *> inGroup soundGroup toggle main0I
                 , D.Style <:=> do
                     -- 6.72738%
                     let pct v = "calc(" <> show (v * 100.0) <> "% - " <> show (v * size) <> "px)"

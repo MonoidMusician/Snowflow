@@ -323,6 +323,7 @@ newSoundGroup = do
         -- We fire added afterwards, since if we push to the bus it won't
         -- register until Bolson processes the node anyways
         when (not Set.member address seenSoFar) do
+          Ref.write (Set.insert address seenSoFar) seen
           added.push { address, payload }
     , added: added.event <#> \{ address, payload } ->
         pure payload <|> filterMap (\r -> if r.address == address then Just r.payload else Nothing) bus.event

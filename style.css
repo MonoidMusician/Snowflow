@@ -1,3 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Arima+Madurai:wght@200;400;700&display=swap');
+body {
+  font-family: "Arima Madurai";
+}
+
 .bars {
   display: flex;
   height: 240px;
@@ -31,6 +36,27 @@
   bottom: calc(52% + 1em);
   text-align: center;
   z-index: 100;
+  font-weight: normal;
+}
+#title > .title {
+  font-weight: bold;
+  font-size: 120%;
+  line-height: 1;
+  transition: color 0.2s;
+}
+#title > .title:hover {
+  color: #5aa6d7;
+}
+#title > .title > a {
+  color: inherit;
+}
+#title > a {
+  font-weight: lighter;
+  color: #f9bfdb;
+  transition: color 0.2s;
+}
+#title > a:hover {
+  color: #e23589;
 }
 a[href] {
   color: pink;
@@ -54,10 +80,12 @@ a[href] {
   position: absolute;
   display: flex;
   z-index: 100;
+  pointer-events: none;
   width: 100%;
   justify-content: space-between;
 }
 #controls > * {
+  pointer-events: all;
   background: linear-gradient(#00002a, transparent);
 }
 
@@ -71,21 +99,26 @@ a[href] {
 .chord {
   cursor: pointer;
   border: none;
-  margin-top: -25px;
-  padding-top: 25px;
-  padding-bottom: 25px;
+  margin-top: -15px;
+  padding-top: 15px;
+  padding-bottom: 15px;
+  opacity: 40%;
+  transition: opacity 0.2s;
+}
+.chord:hover {
+  opacity: 80%;
 }
 .chord::after {
   content: '';
   position: absolute;
   top: calc(50% + 2px);
   width: 100%;
-  border-bottom: 1px solid #fff4;
+  border-bottom: 1px solid #fffa;
 }
 .chord::before {
   content: attr(data-chord-name);
   position: absolute;
-  bottom: 25px;
+  bottom: 15px;
   left: 0.2em;
   font-family: sans-serif;
 }

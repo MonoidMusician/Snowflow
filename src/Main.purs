@@ -49,7 +49,7 @@ import Deku.Hooks (useMemoized, useState, useState')
 import Deku.Listeners (click)
 import Deku.Toplevel (runInBody) as Deku
 import Effect (Effect)
-import Effect.Aff (Milliseconds(..), launchAff_)
+import Effect.Aff (Milliseconds(..), launchAff_, makeAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (throw)
@@ -70,14 +70,19 @@ import Ocarina.WebAPI (AnalyserNodeCb(..), BrowserAudioBuffer)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import QualifiedDo.Alt as Alt
 import Snowflow.Assets (main0Url, pizzs1Url)
+import Snowflow.SoundManager (embedSoundGroup, inGroup, instantiate, listen, loadSound, newManager, newSoundGroup, restart, soundOffsetNorm, toggle)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM.Element (setAttribute)
 import Web.DOM.Element as Element
 import Web.DOM.Node (setTextContent)
 import Web.DOM.NonElementParentNode (getElementById)
+import Web.Event.Event (EventType(..))
+import Web.Event.EventTarget (addEventListener, eventListener)
 import Web.HTML (window)
+import Web.HTML.HTMLDocument (body)
 import Web.HTML.HTMLDocument as HTMLDocument
+import Web.HTML.HTMLElement as HTMLElement
 import Web.HTML.Window (document)
 
 smul :: forall f a. Bifunctor f => Semiring a => a -> f a a -> f a a
@@ -565,8 +570,19 @@ setStatus status = do
 
 main :: Effect Unit
 main = launchAff_ do
+  liftEffect $ setStatus "Click to load samples"
+  makeAff \cb -> do
+    listener <- eventListener \_ -> cb (pure unit)
+    tgt <- window >>= document >>= body >>= maybe (throw "missing body") pure
+    addEventListener (EventType "click") listener false (HTMLElement.toEventTarget tgt)
+    pure mempty
   liftEffect $ setStatus "Loading samples …"
   dlCtx <- context
+  soundManager <- liftEffect $ newManager (Just dlCtx)
+  pizzs1M <- loadSound soundManager pizzs1Url
+  main0M <- loadSound soundManager main0Url
+  main0I <- liftEffect $ instantiate main0M
+  soundGroup <- liftEffect newSoundGroup
   pizzs1 <- decodeAudioDataFromUri dlCtx pizzs1Url
   main0 <- decodeAudioDataFromUri dlCtx main0Url
   log (unsafeCoerce main0)
@@ -624,7 +640,7 @@ main = launchAff_ do
 
     rotateGrad = false
     useStroke = false
-    useFilter = false
+    useFilter = true
 
   analyserE <- liftEffect Event.create
   let
@@ -666,7 +682,6 @@ main = launchAff_ do
   -- from then, we use it for the rest of the app
   leftSnowflakeStartTime :: EventIO Number <- liftEffect $ Event.create
   leftSnowflakePlaying :: EventIO Boolean <- liftEffect $ Event.create
-  rightSnowflakeBang :: EventIO Unit <- liftEffect $ Event.create
   let
     ocarinaOfTime = do
       ctx <- context_
@@ -678,8 +693,7 @@ main = launchAff_ do
       void $ run2 ctx
         [ Oc.analyser_ analysation
             --[ Oc.gain_ 0.15 [ Oc.sinOsc 440.0 bangOn ] ]
-            [ gain_ 1.0
-                [ dyn
+            [ dyn
                     ( map
                         ( \{ startTime, io } ->
 
@@ -695,18 +709,7 @@ main = launchAff_ do
                         )
                         ({ startTime: _, io: _ } <$> leftSnowflakeStartTime.event <*> leftSnowflakePlaying.event)
                     )
-                ]
-            , gain_ 1.0
-                [ dyn
-                    ( map
-                        ( \_ -> pure $ sound
-                            $ Oc.playBuf
-                                pizzs1
-                                bangOn
-                        )
-                        (rightSnowflakeBang.event)
-                    )
-                ]
+            , embedSoundGroup soundGroup
             ]
         ]
       pure ctx
@@ -735,7 +738,7 @@ main = launchAff_ do
         Nothing -> const 0.0
         Just (Left c) -> \s -> (s - c) / main0len
         Just (Right r) -> const (r / main0len)
-    main0Time <- useMemoized $ judgeTime <$> startTime <*> animationAudioTime
+    main0Time <- useMemoized $ listen $ soundOffsetNorm main0I
     Array.fold
       [ D.div (D.Id !:= "controls")
         [ D.label_
@@ -753,14 +756,14 @@ main = launchAff_ do
           , DC.text_ " Straight through"
           ]
         ]
-      , D.div (D.Class !:= "scene" <|> D.Style <:=> (currentVibeS <#> \vibe -> "background:" <> gradientVibe vibe)) $ Array.reverse
+      , D.div (D.Class !:= "scene" <|> D.Style <:=> (currentVibeS <#> \vibe -> "background:" <> gradientVibe vibe))
         [ D.div_ $ [1.697, 4.825, 8.424, 26.270, 28.489] <#> (_ / main0len) >>> \tRule -> flip D.hr [] $ oneOf
           [ D.Class !:= "chord"
           , pure (xdata "chord-name" "Emin")
           , D.OnMousedown <:=> do
               ocarina <#> \o -> do
                 void $ ocarinaOnlyOnce o
-                rightSnowflakeBang.push unit
+                inGroup soundGroup restart =<< instantiate pizzs1M
           , D.Style <:=> do
               let pct v = "calc(" <> show ((2.0 * tRule - v) * 100.0) <> "% - " <> show ((v - 0.5) * size) <> "px)"
               dedup main0Time <#> clamp 0.0 1.0 >>>
@@ -773,24 +776,27 @@ main = launchAff_ do
                 , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
                 , click $ (Tuple <$> startTime <*> ocarina) <#> \(st /\ o) -> do
                     ctx <- ocarinaOnlyOnce o
-                    timeNow <- getAudioClockTime ctx
-                    let
-                      judgeRestart :: forall x. _ -> (_ -> x) -> (_ -> x) -> x
-                      judgeRestart b l r = let t = timeNow - b in if t > main0len then l t else r t
-                    let
-                      newStartTime = case st of
-                        Nothing -> Just 0.0
-                        Just (Right a) -> Just a
-                        Just (Left b) -> judgeRestart b (const $ Just 0.0) (const Nothing)
-                    setStartTime
-                      ( Just case st of
-                          Nothing -> Left timeNow
-                          Just (Right a) -> Left (timeNow - a)
-                          Just (Left b) -> judgeRestart b (const $ Left timeNow) Right
-                      )
-                    for_ newStartTime leftSnowflakeStartTime.push
-                    leftSnowflakePlaying.push (isJust newStartTime)
+                    when false do
+                      timeNow <- getAudioClockTime ctx
+                      let
+                        judgeRestart :: forall x. _ -> (_ -> x) -> (_ -> x) -> x
+                        judgeRestart b l r = let t = timeNow - b in if t > main0len then l t else r t
+                      let
+                        newStartTime = case st of
+                          Nothing -> Just 0.0
+                          Just (Right a) -> Just a
+                          Just (Left b) -> judgeRestart b (const $ Just 0.0) (const Nothing)
+                      setStartTime
+                        ( Just case st of
+                            Nothing -> Left timeNow
+                            Just (Right a) -> Left (timeNow - a)
+                            Just (Left b) -> judgeRestart b (const $ Left timeNow) Right
+                        )
+                      for_ newStartTime leftSnowflakeStartTime.push
+                      leftSnowflakePlaying.push (isJust newStartTime)
+                    inGroup soundGroup toggle main0I
                 , D.Style <:=> do
+                    -- 6.72738%
                     let pct v = "calc(" <> show (v * 100.0) <> "% - " <> show (v * size) <> "px)"
                     let centered = pct 0.5
                     dedup main0Time <#> clamp 0.0 1.0 >>>

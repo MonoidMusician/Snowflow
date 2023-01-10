@@ -3,21 +3,16 @@ module Snowflow.SoundManager where
 import Prelude
 
 import Bolson.Control (switcher)
-import Bolson.Core (bussed)
 import Control.Alt ((<|>))
-import Control.Alternative (empty, guard)
+import Control.Alternative (guard)
 import Control.Apply (lift2)
-import Data.Foldable (oneOfMap)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), isJust, maybe)
 import Data.Monoid.Disj (Disj(..))
-import Data.Newtype (wrap)
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.Set as Set
 import Data.Tuple (Tuple(..))
-import Data.Variant as Variant
-import Debug (spy, traceM)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -27,17 +22,16 @@ import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (Behavior)
 import FRP.Behavior as Behavior
-import FRP.Event (Event, create, filterMap, keepLatest, mailboxed, mapAccum, sampleOnRight, withLast)
+import FRP.Event (Event, create, filterMap, mapAccum, sampleOnRight)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import Ocarina.Control as Oc
-import Ocarina.Core (Audible, AudibleChild, apOff, bangOn)
+import Ocarina.Core (Audible, bangOn)
 import Ocarina.Core as OC
 import Ocarina.Core as Ocarina
 import Ocarina.Interpret (decodeAudioDataFromUri)
 import Ocarina.Interpret as OI
 import Ocarina.WebAPI (AudioContext, BrowserAudioBuffer)
-import Type.Proxy (Proxy(..))
 
 -- | `IOValue i o` represents a realtime-varying value taking values in `i` and
 -- | transforming them to `o`. Most commonly this is a discrete mutable cell

@@ -4,8 +4,9 @@ import Prelude
 
 import Bolson.Control (switcher)
 import Control.Alt ((<|>))
-import Control.Alternative (guard)
+import Control.Alternative (empty, guard)
 import Control.Apply (lift2)
+import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), isJust, maybe)
@@ -66,7 +67,24 @@ instance Apply OValue where
             do map pure (unsafeBang r2.pull) <|> map (Tuple (Disj true)) r2.event
     , behavior: r1.behavior <*> r2.behavior
     }
-
+instance Applicative OValue where
+  pure v = IOValue
+    { push: absurd
+    , pull: pure v
+    , event: empty
+    , behavior: pure v
+    }
+instance Semigroup a => Semigroup (OValue a) where
+  append = lift2 append
+instance Monoid m => Monoid (OValue m) where
+  mempty = pure mempty
+instance HeytingAlgebra a => HeytingAlgebra (OValue a) where
+  conj = lift2 conj
+  disj = lift2 disj
+  tt = pure tt
+  ff = pure ff
+  implies = lift2 implies
+  not = map not
 
 type DValue t = IOValue t t
 type OValue = IOValue Void
@@ -232,7 +250,7 @@ soundOffsetNorm sound@(SoundInstance { metadata: { duration } }) =
 
 soundPlaying :: SoundInstance -> OValue Boolean
 soundPlaying (SoundInstance { info }) =
-  isJust <<< _.playingSince <$> output info
+  (isJust <<< _.playingSince <$> output info)
 
 contextTime :: AudioContext -> OValue Number
 contextTime context = IOValue

@@ -15,6 +15,7 @@ import Data.Bifoldable (bifoldMap)
 import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
 import Data.DateTime.Instant (Instant, unInstant)
 import Data.DateTime.Instant as Instant
+import Data.Either (hush)
 import Data.Foldable (class Foldable, foldl, for_, maximumBy, oneOf, sum, traverse_)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
@@ -34,19 +35,17 @@ import Data.Semigroup.Foldable (intercalateMap)
 import Data.String as String
 import Data.String.CodeUnits as CodeUnits
 import Data.These (These(..), these)
-import Data.Traversable (traverse)
+import Data.Traversable (for, traverse)
 import Data.TraversableWithIndex (mapAccumLWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.UInt as UInt
 import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
-import Deku.Do (bind) as Deku
-import Deku.Hooks (useMemoized)
 import Deku.Listeners (click_)
 import Deku.Toplevel (runInBody) as Deku
 import Effect (Effect)
-import Effect.Aff (Canceler(..), Milliseconds(..), launchAff_, makeAff)
+import Effect.Aff (Canceler(..), Milliseconds(..), launchAff_, makeAff, try)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
@@ -60,13 +59,15 @@ import FRP.Event.Class (sampleOnRightOp)
 import FRP.Event.Time (withTime)
 import Ocarina.Control as Oc
 import Ocarina.Core (Po2(..))
-import Ocarina.Interpret (bufferSampleRate, context, getByteFrequencyData)
+import Ocarina.Interpret (context, getByteFrequencyData)
 import Ocarina.Run (run2)
-import Ocarina.WebAPI (AnalyserNodeCb(..), BrowserAudioBuffer)
+import Ocarina.WebAPI (AnalyserNodeCb(..), AudioContext)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import Snowflow.Assets (main0Url, pizzs1Url)
-import Snowflow.SoundManager (SoundManager(..), embedSoundGroup, inGroup, instantiate, listen, loadSound, newManager, newSoundGroup, restart, soundOffsetNorm, toggle)
+import Record as Record
+import Snowflow.Assets as Assets
+import Snowflow.SoundManager (SoundManager(..), embedSoundGroup, inGroup, instantiate, listen, loadSound, newManager, newSoundGroup, restart, resume, soundOffsetNorm, toggle)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM.Element (setAttribute)
 import Web.DOM.Element as Element
 import Web.DOM.Node (setTextContent)
@@ -169,10 +170,10 @@ dedup = Event.withLast >>> Event.filterMap case _ of
     | last /= now -> Just now
     | otherwise -> Nothing
 
-mkfreq :: BrowserAudioBuffer -> Number -> Number
-mkfreq ab idxNorm = (bufferSampleRate ab / 2.0) * idxNorm
+mkfreq :: AudioContext -> Number -> Number
+mkfreq ab idxNorm = (((unsafeCoerce :: AudioContext -> { sampleRate :: Number }) ab).sampleRate / 2.0) * idxNorm
 
-freqBins :: forall a. BrowserAudioBuffer -> Array a -> Array (Tuple Bin a)
+freqBins :: forall a. AudioContext -> Array a -> Array (Tuple Bin a)
 freqBins ab binData =
   let
     up = Int.toNumber
@@ -298,7 +299,7 @@ applyOvertoneCorrections orig =
   in
     alignL (\v -> maybe' (\_ -> join { original: _, corrected: _, correction: 0.0 } <$> v) (alignL correct v)) orig corrections
 
-noteScoresC' :: BrowserAudioBuffer -> Array Number -> Array (Array OCC)
+noteScoresC' :: AudioContext -> Array Number -> Array (Array OCC)
 noteScoresC' ab fft = applyOvertoneCorrections $ gatherOctaves
   let
     binned = freqBins ab fft
@@ -306,13 +307,13 @@ noteScoresC' ab fft = applyOvertoneCorrections $ gatherOctaves
     noteOctaves <#> map \octaveBin ->
       matchingFreq octaveBin binned
 
-noteScoresC :: BrowserAudioBuffer -> Array Number -> Array OCC
+noteScoresC :: AudioContext -> Array Number -> Array OCC
 noteScoresC ab fft = sum <$> noteScoresC' ab fft
 
-noteScores' :: BrowserAudioBuffer -> Array Number -> Array (Array Number)
+noteScores' :: AudioContext -> Array Number -> Array (Array Number)
 noteScores' ab fft = map _.corrected <$> noteScoresC' ab fft
 
-noteScores :: BrowserAudioBuffer -> Array Number -> Array Number
+noteScores :: AudioContext -> Array Number -> Array Number
 noteScores ab fft = sum <$> noteScores' ab fft
 
 whichNote :: Array Number -> Maybe Int
@@ -583,13 +584,17 @@ main = launchAff_ do
     pure $ Canceler \_ -> liftEffect cleanup
   liftEffect $ setStatus "Loading samples …"
   soundManager <- liftEffect $ newManager (Just dlCtx)
-  liftEffect $ setStatus "Loading sample 0/1 …"
-  pizzs1M <- loadSound soundManager pizzs1Url
-  liftEffect $ setStatus "Loading sample 1/1 …"
-  main0M <- loadSound soundManager main0Url
-  main0I <- liftEffect $ instantiate main0M
+
+  liftEffect $ setStatus "Loading samples …"
+  sections <- for Assets.sections \section -> do
+    soundM <- loadSound soundManager section.file
+    soundI <- liftEffect $ instantiate soundM
+    chords <- for section.chords \chord -> do
+      chordM <- hush <$> try (loadSound soundManager chord.file)
+      pure $ Record.merge { chordM } chord
+    pure $ Record.merge { soundM, soundI, chords } section
+
   soundGroup <- liftEffect newSoundGroup
-  let main0len = main0M.duration
   liftEffect $ setStatus "Starting UI …"
 
   let
@@ -660,8 +665,8 @@ main = launchAff_ do
       }
   sampled <- memoize $ map UInt.toNumber <$> dedup (Behavior.sample_ analyserB animationFrame)
 
-  currentNoteScores <- memoize $ sampled <#> noteScores main0M.buffer
-  currentNoteScores' <- memoize $ sampled <#> noteScores' main0M.buffer
+  currentNoteScores <- memoize $ sampled <#> noteScores dlCtx
+  currentNoteScores' <- memoize $ sampled <#> noteScores' dlCtx
   currentWhichNote <- memoize $ dedup $ currentNoteScores <#> whichNote
 
   currentVibe <- memoize $ currentNoteScores' <#> calcVibe
@@ -697,7 +702,6 @@ main = launchAff_ do
   liftEffect $ setAttribute "style" "" =<< existingElement "help"
 
   liftEffect $ Deku.runInBody Deku.do
-    main0Time <- useMemoized $ listen $ soundOffsetNorm main0I
     Array.fold
       [ D.div (D.Id !:= "controls")
         [ D.label_
@@ -715,28 +719,34 @@ main = launchAff_ do
           , DC.text_ " Straight through"
           ]
         ]
-      , D.div (D.Class !:= "scene" <|> D.Style <:=> (currentVibeS <#> \vibe -> "background:" <> gradientVibe vibe))
-        [ D.div_ $ [1.697, 4.825, 8.424, 26.270, 28.489] <#> (_ / main0len) >>> \tRule -> flip D.hr [] $ oneOf
+      , D.div (D.Class !:= "scene" <|> D.Style <:=> ((pure [] <|> currentVibeS) <#> \vibe -> "background:" <> gradientVibe vibe)) $
+        sections <#> \section -> D.section (D.Style !:= "width:20%") $ Array.reverse
+        [ D.div_ $ section.chords <#> \{ name, startNorm, chordM: chordm } -> flip D.hr [] $ oneOf
+          let tRule = clamp 0.0 1.0 startNorm in
           [ D.Class !:= "chord"
-          , pure (xdata "chord-name" "Emin")
+          , pure (xdata "chord-name" name)
           , D.OnMousedown !:= do
-              ocarinaOfTime *> do inGroup soundGroup restart =<< instantiate pizzs1M
+              ocarinaOfTime
+              for_ chordm \chordM -> do
+                inGroup soundGroup restart =<< instantiate chordM
+              when (tRule == 0.0) do
+                inGroup soundGroup resume section.soundI
           , D.Style <:=> do
               let pct v = "calc(" <> show ((2.0 * tRule - v) * 100.0) <> "% - " <> show ((v - 0.5) * size) <> "px)"
-              dedup main0Time <#> clamp 0.0 1.0 >>>
-                \t -> "position: absolute; left: 0; top: " <> pct t <> "; width: 100vw; height: 1px"
+              dedup (listen (soundOffsetNorm section.soundI)) <#> clamp 0.0 1.0 >>>
+                \t -> "position: absolute; left: 0; top: " <> pct t <> "; width: 100%"
           ]
         , D.svg
             ( oneOf
                 [ D.Width !:= show (padding + size + padding)
                 , D.Height !:= show (padding + size + padding)
                 , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
-                , click_ $ ocarinaOfTime *> inGroup soundGroup toggle main0I
+                , click_ $ ocarinaOfTime *> inGroup soundGroup toggle section.soundI
                 , D.Style <:=> do
                     -- 6.72738%
                     let pct v = "calc(" <> show (v * 100.0) <> "% - " <> show (v * size) <> "px)"
                     let centered = pct 0.5
-                    dedup main0Time <#> clamp 0.0 1.0 >>>
+                    dedup (listen (soundOffsetNorm section.soundI)) <#> clamp 0.0 1.0 >>>
                       \t -> "position: absolute; left: " <> centered <> "; top: " <> pct t <> ";"
                 ]
             )

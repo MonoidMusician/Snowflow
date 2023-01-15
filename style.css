@@ -95,15 +95,23 @@ a[href] {
   position: relative;
   overflow: hidden;
 }
+.scene > section {
+  width: 20%;
+  height: 100%;
+  display: inline-block;
+  position: relative;
+}
 
 .chord {
   cursor: pointer;
   border: none;
-  margin-top: -15px;
-  padding-top: 15px;
-  padding-bottom: 15px;
-  opacity: 40%;
+  --padding: 15px;
+  margin-top: calc(-1 * var(--padding));
+  padding-top: var(--padding);
+  padding-bottom: 200px;
+  opacity: 20%;
   transition: opacity 0.2s;
+  overflow: visible;
 }
 .chord:hover {
   opacity: 80%;
@@ -111,14 +119,14 @@ a[href] {
 .chord::after {
   content: '';
   position: absolute;
-  top: calc(50% + 2px);
+  top: calc(var(--padding) + 4px);
   width: 100%;
-  border-bottom: 1px solid #fffa;
+  border-bottom: 2px solid #fffa;
 }
 .chord::before {
   content: attr(data-chord-name);
   position: absolute;
-  bottom: 15px;
-  left: 0.2em;
+  top: calc(var(--padding) - 9px);
+  left: 0.3em;
   font-family: sans-serif;
 }

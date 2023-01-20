@@ -30,6 +30,7 @@
   , "profunctor"
   , "profunctor-lenses"
   , "qualified-do"
+  , "record"
   , "refs"
   , "st"
   , "strings"

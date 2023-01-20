@@ -6,14 +6,17 @@ import Bolson.Control (switcher)
 import Control.Alt ((<|>))
 import Control.Alternative (empty, guard)
 import Control.Apply (lift2)
+import Data.Foldable (oneOf, traverse_)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), isJust, maybe)
 import Data.Monoid.Disj (Disj(..))
+import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.Set as Set
 import Data.Tuple (Tuple(..))
+import Data.Variant (Variant, inj)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -23,16 +26,17 @@ import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (Behavior)
 import FRP.Behavior as Behavior
-import FRP.Event (Event, create, filterMap, mapAccum, sampleOnRight)
+import FRP.Event (class Filterable, Event, create, filterMap, mapAccum, sampleOnRight, withLast)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import Ocarina.Control as Oc
-import Ocarina.Core (Audible, bangOn)
+import Ocarina.Core (Audible, AudioOnOff, apOff, apOn, dt)
 import Ocarina.Core as OC
 import Ocarina.Core as Ocarina
 import Ocarina.Interpret (decodeAudioDataFromUri)
 import Ocarina.Interpret as OI
 import Ocarina.WebAPI (AudioContext, BrowserAudioBuffer)
+import Type.Proxy (Proxy(..))
 
 -- | `IOValue i o` represents a realtime-varying value taking values in `i` and
 -- | transforming them to `o`. Most commonly this is a discrete mutable cell
@@ -249,8 +253,9 @@ soundOffsetNorm sound@(SoundInstance { metadata: { duration } }) =
   soundOffset sound <#> (_ / duration)
 
 soundPlaying :: SoundInstance -> OValue Boolean
-soundPlaying (SoundInstance { info }) =
+soundPlaying sound@(SoundInstance { info }) =
   (isJust <<< _.playingSince <$> output info)
+  && ((_ < 1.0) <$> output (soundOffsetNorm sound))
 
 contextTime :: AudioContext -> OValue Number
 contextTime context = IOValue
@@ -265,28 +270,39 @@ type SoundKey =
   { fileName :: String
   , id :: Int
   }
-type SoundInstruction =
-  Maybe
+newtype SoundInstruction = SoundInstruction
+  { delay :: Number
+  , then :: Maybe
     { buffer :: BrowserAudioBuffer
     , bufferOffset :: Number
     }
+  }
+instance Semigroup SoundInstruction where
+  append (SoundInstruction i1) (SoundInstruction i2) =
+    SoundInstruction if i2.delay >= i1.delay then i2 else i1
+derive instance Newtype SoundInstruction _
+
 type SoundPlay =
-  SoundInstance -> Effect SoundInstruction
-type SoundPlayG =
-  SoundGroup SoundKey -> SoundInstance -> Effect Unit
+  SoundInstance -> Effect (Maybe SoundInstruction)
 
 inGroup :: SoundGroup SoundKey -> SoundPlay -> SoundInstance -> Effect Unit
 inGroup g operation i@(SoundInstance { metadata: { fileName }, id }) = do
-  operation i >>= setSound g { fileName, id }
+  operation i >>= traverse_ (setSound g { fileName, id })
 
 restart :: SoundPlay
-restart sound@(SoundInstance { metadata: { buffer }, info }) = do
+restart = restartAfter 0.0
+
+restartAfter :: Number -> SoundPlay
+restartAfter delay sound@(SoundInstance { metadata: { buffer }, info }) = do
   playingSince <- get $ soundTime sound
   set { startOffset: 0.0, playingSince: Just playingSince } info
-  pure $ Just { buffer, bufferOffset: 0.0 }
+  pure $ pure $ SoundInstruction { delay, then: Just { buffer, bufferOffset: 0.0 } }
 
 resume :: SoundPlay
-resume sound@(SoundInstance { metadata: { buffer, duration }, info }) = do
+resume = resumeAfter 0.0
+
+resumeAfter :: Number -> SoundPlay
+resumeAfter delay sound@(SoundInstance { metadata: { buffer, duration }, info }) = do
   playingSince <- get $ soundTime sound
   startOffset <- get $ soundOffset sound
   let
@@ -295,13 +311,16 @@ resume sound@(SoundInstance { metadata: { buffer, duration }, info }) = do
         then 0.0
         else startOffset
   set { startOffset: newStartOffset, playingSince: Just playingSince } info
-  pure $ Just { buffer, bufferOffset: newStartOffset }
+  pure $ pure $ SoundInstruction { delay, then: Just { buffer, bufferOffset: newStartOffset } }
 
 stop :: SoundPlay
-stop sound@(SoundInstance { info }) = do
+stop = stopAfter 0.0
+
+stopAfter :: Number -> SoundPlay
+stopAfter delay sound@(SoundInstance { info }) = do
   startOffset <- get $ soundOffset sound
   set { startOffset, playingSince: Nothing } info
-  pure $ Nothing
+  pure $ pure $ SoundInstruction { delay, then: Nothing }
 
 -- TODO
 -- afterEnd :: SoundInstance -> Effect Unit -> Effect Unit
@@ -321,10 +340,12 @@ toggle sound = do
 newtype SoundGroup k = SoundGroup
   { push :: k -> SoundInstruction -> Effect Unit
   , added :: Event (Event SoundInstruction)
+  , context :: AudioContext
   }
 
-newSoundGroup :: forall k. Ord k => Effect (SoundGroup k)
-newSoundGroup = do
+newSoundGroup :: forall k. Ord k => Maybe AudioContext -> Effect (SoundGroup k)
+newSoundGroup mctx = do
+  context <- maybe OI.context pure mctx
   bus <- create
   let
     added = filterMap identity $
@@ -336,15 +357,55 @@ newSoundGroup = do
         bus.push { address, payload }
     , added: added <#> \{ address, payload } ->
         pure payload <|> filterMap (\r -> if r.address == address then Just r.payload else Nothing) bus.event
+    , context
     }
+
+audioCtl
+  :: forall nt r
+   . Newtype nt (Variant (onOff :: AudioOnOff | r))
+  => Boolean -> Number -> nt
+audioCtl on delay = wrap $ inj (Proxy :: Proxy "onOff") $ dt (_ + delay) (if on then apOn else apOff)
 
 embedSoundGroup :: forall k outputChannels lock payload. SoundGroup k -> Audible outputChannels lock payload
 embedSoundGroup (SoundGroup { added }) =
-  Ocarina.dyn $ pure <<< OC.sound <<< switcher emitSound <$> added
+  Ocarina.dyn $ (\e -> pure $ OC.sound $ switcher identity (filterMap identity (emitSound (dropFirst e) <$> e))) <$> added
   where
-  emitSound :: SoundInstruction -> Audible outputChannels lock payload
-  emitSound Nothing = Oc.silence
-  emitSound (Just config) = Oc.playBuf config bangOn
+  emitSound :: Event SoundInstruction -> SoundInstruction -> Maybe (Audible outputChannels lock payload)
+  emitSound _ (SoundInstruction { then: Nothing }) = empty
+  emitSound next (SoundInstruction { delay, then: Just config }) = pure $ Ocarina.dyn $ pure $ oneOf
+    [ pure $ OC.sound $
+        Oc.playBuf config (pure (audioCtl true delay) <|> audioCtl false <<< _.delay <<< unwrap <$> next)
+    ]
 
 setSound :: forall k. SoundGroup k -> k -> SoundInstruction -> Effect Unit
-setSound (SoundGroup { push }) = push
+setSound (SoundGroup { push, context }) k (SoundInstruction i) = do
+  time <- get (contextTime context)
+  push k (SoundInstruction i { delay = time + i.delay })
+
+dropFirst :: forall f b. Filterable f => Event.IsEvent f => f b -> f b
+dropFirst = filterMap (\{ last, now } -> now <$ last) <<< withLast
+
+filter :: forall f b. Filterable f => (b -> Boolean) -> f b -> f b
+filter p = filterMap (\v -> if p v then Just v else Nothing)
+
+rising :: Event Boolean -> Event Unit
+rising = withLast >>> filterMap \{ last, now } ->
+  last >>= if _ then Nothing else guard now
+
+threshold :: forall a. Ord a => OValue a -> a -> Event a
+threshold ovalue reference =
+  withLast (listen ovalue) # filterMap \{ last, now } ->
+    last >>= \l -> if l >= reference || now < reference then Nothing else Just now
+
+-- TODO: setTimeout before polling
+audioEventThreshold :: AudioContext -> Number -> Event Number
+audioEventThreshold = threshold <<< contextTime
+
+soundOffsetThreshold :: SoundInstance -> Number -> Event Number
+soundOffsetThreshold = threshold <<< soundOffset
+
+soundOffsetNormThreshold :: SoundInstance -> Number -> Event Number
+soundOffsetNormThreshold = threshold <<< soundOffsetNorm
+
+soundOverrun :: SoundInstance -> Event Unit
+soundOverrun = compose void $ soundOffsetNormThreshold <@> 1.0

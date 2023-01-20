@@ -1,4 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Arima+Madurai:wght@200;400;700&display=swap');
+@import url('https://fonts.cdnfonts.com/css/libertinus-sans');
+@import url('https://fonts.cdnfonts.com/css/libertinus-serif');
+
 body {
   font-family: "Arima Madurai";
 }
@@ -37,6 +40,10 @@ body {
   text-align: center;
   z-index: 100;
   font-weight: normal;
+  pointer-events: none;
+}
+#title > * {
+  pointer-events: auto;
 }
 #title > .title {
   font-weight: bold;
@@ -62,14 +69,17 @@ a[href] {
   color: pink;
   text-decoration: none;
 }
-#status, #help {
+#status, #help, #tips {
   width: 100%;
   position: absolute;
   top: calc(48% - 1em);
   z-index: 100;
   text-align: center;
 }
-#help {
+#status {
+  top: calc(48% - 3em);
+}
+#help, #tips {
   width: 80%;
   left: 10%;
   border: 1px solid white;
@@ -82,11 +92,20 @@ a[href] {
   z-index: 100;
   pointer-events: none;
   width: 100%;
-  justify-content: space-between;
+  justify-content: center;
 }
 #controls > * {
   pointer-events: all;
   background: linear-gradient(#00002a, transparent);
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+#controls > :first-child {
+  text-align: left;
+}
+#controls > :last-child {
+  text-align: right;
 }
 
 .scene {
@@ -127,6 +146,47 @@ a[href] {
   content: attr(data-chord-name);
   position: absolute;
   top: calc(var(--padding) - 9px);
+  white-space: pre-line;
+  line-height: 1.25;
   left: 0.3em;
-  font-family: sans-serif;
+  font-family: 'Libertinus Sans', 'Libertinus Serif', sans-serif;
+  font-size: 12px;
+}
+
+button {
+  font-family: 'Libertinus Sans';
+  font-size: 0.9em;
+  line-height: 1.2;
+  border-radius: 1em;
+  color: #5aa6d7cc;
+  border-color: #5aa6d7aa;
+  border-width: 2px;
+  border-style: solid;
+  background: none;
+  padding: 0 0.5em;
+  margin: 0 0.25em;
+  transition: border-color 0.2s, color 0.2s, box-shadow 0.1s ease-out, transform 0.1s ease-out;
+  box-shadow: 1px 1px 0.5px 0.5px transparent, inset 1px 1px 0px 1.5px transparent;
+  /* https://stackoverflow.com/questions/3461441/prevent-flicker-on-webkit-transition-of-webkit-transform */
+  -webkit-backface-visibility: hidden
+}
+button:not(:disabled):not(.disabled):hover {
+  transition: border-color 0.1s, color 0.1s, box-shadow 0.1s ease-out, transform 0.1s ease-out;
+  color: #5aa6d7;
+  box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0002;
+}
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):not(.disabled):not(:hover) {
+    border-color: #5aa6d755;
+  }
+}
+button:not(:disabled):not(.disabled):active {
+  color: #5aa6d7;
+  border-color: #5aa6d7;
+  box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002;
+  transform: translate(1.1px, 1.1px);
+}
+button:not(:disabled):not(.disabled):focus-visible {
+  outline: 1px solid white;
+  color: #5aa6d7;
 }

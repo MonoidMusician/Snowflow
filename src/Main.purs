@@ -4,6 +4,7 @@ import Prelude
 
 import CSS.Color (Color)
 import Control.Alt ((<|>))
+import Control.Alternative (guard)
 import Control.Monad.ST as ST
 import Control.Monad.State (execState, get, gets)
 import Data.Align (align)
@@ -17,7 +18,7 @@ import Data.DateTime.Instant (Instant, unInstant)
 import Data.DateTime.Instant as Instant
 import Data.Either (hush)
 import Data.Foldable (class Foldable, foldl, for_, maximumBy, oneOf, sum, traverse_)
-import Data.FoldableWithIndex (foldMapWithIndex)
+import Data.FoldableWithIndex (foldMapWithIndex, forWithIndex_)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
@@ -39,6 +40,7 @@ import Data.Traversable (for, traverse)
 import Data.TraversableWithIndex (mapAccumLWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.UInt as UInt
+import Debug (spy)
 import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
@@ -47,6 +49,7 @@ import Deku.Toplevel (runInBody) as Deku
 import Effect (Effect)
 import Effect.Aff (Canceler(..), Milliseconds(..), launchAff_, makeAff, try)
 import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Class.Console (logShow)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Effect.Timer (setTimeout)
@@ -65,7 +68,8 @@ import Ocarina.WebAPI (AnalyserNodeCb(..), AudioContext)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Record as Record
 import Snowflow.Assets as Assets
-import Snowflow.SoundManager (SoundManager(..), embedSoundGroup, inGroup, instantiate, listen, loadSound, newManager, newSoundGroup, restart, resume, soundOffsetNorm, toggle)
+import Snowflow.SoundManager (SoundManager(..), embedSoundGroup, inGroup, instantiate, listen, loadSound, newManager, newSoundGroup, restart, restartAfter, resume, soundOffset, soundOffsetNorm, soundOffsetThreshold, soundOverrun, soundPlaying, soundTime, stop, toggle)
+import Snowflow.SoundManager as SM
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM.Element (setAttribute)
@@ -585,16 +589,25 @@ main = launchAff_ do
   liftEffect $ setStatus "Loading samples …"
   soundManager <- liftEffect $ newManager (Just dlCtx)
 
-  liftEffect $ setStatus "Loading samples …"
+  let nSamples = sum $ Assets.sections <#> \section -> 1 + Array.length section.chords
+  sampleN <- liftEffect $ Ref.new 0
+  let
+    loadSample = liftEffect do
+      n <- Ref.modify (_ + 1) sampleN
+      setStatus $ "Loading sample " <> show n <> "/" <> show nSamples <> " …"
   sections <- for Assets.sections \section -> do
+    loadSample
     soundM <- loadSound soundManager section.file
     soundI <- liftEffect $ instantiate soundM
     chords <- for section.chords \chord -> do
+      loadSample
       chordM <- hush <$> try (loadSound soundManager chord.file)
-      pure $ Record.merge { chordM } chord
+      chordI <- liftEffect $ traverse instantiate chordM
+      pure $ Record.merge { chordM, chordI } chord
     pure $ Record.merge { soundM, soundI, chords } section
 
-  soundGroup <- liftEffect newSoundGroup
+  melody <- liftEffect $ newSoundGroup $ Just dlCtx
+  pizzicati <- liftEffect $ newSoundGroup $ Just dlCtx
   liftEffect $ setStatus "Starting UI …"
 
   let
@@ -695,8 +708,27 @@ main = launchAff_ do
         setTimeout 1000 $ liftEffect $ setAttribute "style" "display:none" el
       void $ run2 ctx
         [ Oc.analyser_ analysation
-            [ embedSoundGroup soundGroup ]
+            [ Oc.gain_ 0.8 [ embedSoundGroup melody ]
+            , Oc.gain_ 1.0 [ embedSoundGroup pizzicati ]
+            ]
         ]
+    controlMelody op section = do
+      pretime <- SM.get (soundOffset section.soundI)
+      inGroup melody op section.soundI
+      playing <- SM.get (soundPlaying section.soundI)
+      let time = pretime <$ guard playing
+      for_ section.chords \chord -> do
+        for_ chord.chordI \chordI -> do
+          let
+            chOp = time # maybe stop
+              \t ->
+                let delay = spy "delay" $ max 0.0 (chord.startTime - section.startTime) - t
+                in if delay >= 0.0 then restartAfter delay else mempty
+          inGroup pizzicati chOp chordI
+  liftEffect $ forWithIndex_ sections \i section -> do
+    for_ (sections Array.!! (i + 1)) \section2 -> do
+      void $ Event.subscribe (soundOffsetThreshold section.soundI (section2.startTime - section.startTime)) \_ -> do
+        controlMelody restart section2
 
   liftEffect $ setStatus ""
   liftEffect $ setAttribute "style" "" =<< existingElement "help"
@@ -704,14 +736,17 @@ main = launchAff_ do
   liftEffect $ Deku.runInBody Deku.do
     Array.fold
       [ D.div (D.Id !:= "controls")
-        [ D.label_
+        [ D.div_ $ pure $ D.label_
           [ flip D.input [] $ oneOf
             [ D.Xtype !:= "checkbox"
             , D.Checked !:= "false"
             ]
           , DC.text_ " Auto chords"
           ]
-        , D.label_
+        , D.div_ $ pure $ D.button (oneOf [])
+          [ DC.text_ "Pause"
+          ]
+        , D.div_ $ pure $ D.label_
           [ flip D.input [] $ oneOf
             [ D.Xtype !:= "checkbox"
             , D.Checked !:= "false"
@@ -720,17 +755,19 @@ main = launchAff_ do
           ]
         ]
       , D.div (D.Class !:= "scene" <|> D.Style <:=> ((pure [] <|> currentVibeS) <#> \vibe -> "background:" <> gradientVibe vibe)) $
-        sections <#> \section -> D.section (D.Style !:= "width:20%") $ Array.reverse
+        sections <#> \section -> D.section (D.Style !:= "width:20%") $
         [ D.div_ $ section.chords <#> \{ name, startNorm, chordM: chordm } -> flip D.hr [] $ oneOf
           let tRule = clamp 0.0 1.0 startNorm in
           [ D.Class !:= "chord"
           , pure (xdata "chord-name" name)
           , D.OnMousedown !:= do
               ocarinaOfTime
-              for_ chordm \chordM -> do
-                inGroup soundGroup restart =<< instantiate chordM
-              when (tRule == 0.0) do
-                inGroup soundGroup resume section.soundI
+              if tRule == 0.0
+                then do
+                  controlMelody restart section
+                else do
+                  for_ chordm \chordM -> do
+                    inGroup pizzicati restart =<< instantiate chordM
           , D.Style <:=> do
               let pct v = "calc(" <> show ((2.0 * tRule - v) * 100.0) <> "% - " <> show ((v - 0.5) * size) <> "px)"
               dedup (listen (soundOffsetNorm section.soundI)) <#> clamp 0.0 1.0 >>>
@@ -741,10 +778,10 @@ main = launchAff_ do
                 [ D.Width !:= show (padding + size + padding)
                 , D.Height !:= show (padding + size + padding)
                 , D.ViewBox !:= maybe mempty (intercalateMap " " show) (NEA.fromArray [ -radius - padding, -radius - padding, size + padding + padding, size + padding + padding ])
-                , click_ $ ocarinaOfTime *> inGroup soundGroup toggle section.soundI
+                , click_ $ ocarinaOfTime *> controlMelody toggle section
                 , D.Style <:=> do
                     -- 6.72738%
-                    let pct v = "calc(" <> show (v * 100.0) <> "% - " <> show (v * size) <> "px)"
+                    let pct v = "calc(" <> show (v * 100.0) <> "% - " <> show (padding + v * size) <> "px)"
                     let centered = pct 0.5
                     dedup (listen (soundOffsetNorm section.soundI)) <#> clamp 0.0 1.0 >>>
                       \t -> "position: absolute; left: " <> centered <> "; top: " <> pct t <> ";"
@@ -802,3 +839,4 @@ main = launchAff_ do
         ]
       ]
   liftEffect $ setStatus ""
+  liftEffect $ setAttribute "style" "display:none" =<< existingElement "tips"

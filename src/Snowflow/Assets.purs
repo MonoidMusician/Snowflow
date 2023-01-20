@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Int as Int
-import Debug (spyWith)
+import Data.TraversableWithIndex (mapAccumRWithIndex)
 import Record as Record
 
 foreign import main0Url :: String
@@ -91,7 +91,7 @@ sections :: Array
     , name :: String
     }
   }
-sections = Array.mapWithIndex segmentChords
+sections = _.value $ mapAccumRWithIndex segmentChords chords
   [ { startTime: samples 86032
     , length: samples 1817722
     , file: melody1Url
@@ -119,11 +119,15 @@ sections = Array.mapWithIndex segmentChords
     }
   ]
   where
-  segmentChords i r = r { chords = _ } $
-    map (\c -> Record.merge { startNorm: (c.startTime - r.startTime) / r.length } c) $
-      chords # Array.filter \c ->
-        (c.startTime == 0.0 && i == 0) ||
-        (c.startTime >= r.startTime && c.startTime <= r.startTime + r.length)
+  segmentChords i chordsLeft r =
+    let
+      toTime c = Record.merge { startNorm: (c.startTime - r.startTime) / r.length } c
+      cs = map toTime $
+        chordsLeft # Array.filter \c ->
+          (c.startTime == 0.0 && i == 0) ||
+          (c.startTime >= r.startTime && c.startTime <= r.startTime + r.length)
+    in
+      { accum: Array.dropEnd (Array.length cs) chordsLeft, value: r { chords = cs } }
 
 chords :: Array
   { startTime :: Number
@@ -131,194 +135,205 @@ chords :: Array
   , name :: String
   }
 chords =
+  Array.mapWithIndex (\i c -> c { name = show (i+1) <> "\n" <> c.name }) $
+  -- 6 (B higher) 18 28 29
+  -- 32 34 36 38 (more C#) 47
+  -- 26 27 more ring
+  -- couple chords in the beginning
   Array.zipWith Record.merge chordInfo ({ startTime: _ } <$> chordTiming)
   where
-  chordInfo = spyWith "chordInfo" Array.length $ (\cs -> Array.take 20 cs <> Array.take 15 cs <> Array.drop 20 cs)
+  sharp = "\x266F"
+  flat = "\x266D"
+  seventh = const "7" "\x2077"
+  chordInfo = Array.take 20 <> Array.take 15 <> Array.drop 20 $
     [ { file: chord1Url
-      , name: "E min"
+      , name: "Emin"
       }
     , { file: chord2Url
-      , name: ""
+      , name: "Emin"<>seventh
       }
     , { file: chord3Url
-      , name: ""
+      , name: "Cmaj"<>seventh
       }
     , { file: chord4Url
-      , name: ""
+      , name: "F"<>sharp<>"min"<>seventh
       }
     , { file: chord5Url
-      , name: ""
+      , name: "D"<>seventh
       }
     , { file: chord6Url
-      , name: ""
+      , name: "Bmin"<>seventh
       }
     , { file: chord7Url
-      , name: ""
+      , name: "Emin"<>seventh
       }
     , { file: chord8Url
-      , name: ""
+      , name: "Amin"<>seventh
       }
     , { file: chord9Url
-      , name: ""
+      , name: "Emin"
       }
     , { file: chord10Url
-      , name: ""
+      , name: "Bmin+11"
       }
     , { file: chord11Url
-      , name: ""
+      , name: "B"<>seventh<>flat<>"5"
       }
     , { file: chord12Url
-      , name: ""
+      , name: "Emin+11"
       }
     , { file: chord13Url
-      , name: ""
+      , name: "E7"
       }
     , { file: chord14Url
-      , name: ""
+      , name: "Amin7"
       }
     , { file: chord15Url
-      , name: ""
+      , name: "D7"
       }
     , { file: chord16Url
-      , name: ""
+      , name: "Emin"
       }
     , { file: chord17Url
-      , name: ""
+      , name: "Amin"<>seventh
       }
     , { file: chord18Url
-      , name: ""
+      , name: "Fmin"
       }
     , { file: chord19Url
-      , name: ""
+      , name: "Emin/B"
       }
     , { file: chord20Url
-      , name: ""
+      , name: "B"<>seventh
       }
     , { file: chord21Url
-      , name: ""
+      , name: "G"
       }
     , { file: chord22Url
-      , name: ""
+      , name: "Amin7"
       }
     , { file: chord23Url
-      , name: ""
+      , name: "Bmin"
       }
     , { file: chord24Url
-      , name: ""
+      , name: "D"
       }
     , { file: chord25Url
-      , name: ""
+      , name: "F"<>sharp<>"min"<>seventh
       }
     , { file: chord26Url
-      , name: ""
+      , name: "Bmin"
       }
     , { file: chord27Url
-      , name: ""
+      , name: "Bdim"<>seventh
       }
     , { file: chord28Url
-      , name: ""
+      , name: "C"<>sharp<>seventh<>"/A"
       }
     , { file: chord29Url
-      , name: ""
+      , name: "F"<>sharp<>"min"
       }
     , { file: chord30Url
-      , name: ""
+      , name: "A6"
       }
     , { file: chord31Url
-      , name: ""
+      , name: "Amin6"
       }
     , { file: chord32Url
-      , name: ""
+      , name: "Bmin"<>seventh -- <>"+11"
       }
     , { file: chord33Url
-      , name: ""
+      , name: "E+9"
       }
     , { file: chord34Url
-      , name: ""
+      , name: "B/G"
       }
     , { file: chord35Url
-      , name: ""
+      , name: "Emin"
       }
     , { file: chord36Url
-      , name: ""
+      , name: "Emin"<>seventh
       }
     , { file: chord37Url
-      , name: ""
+      , name: "Dmaj"<>seventh
       }
     , { file: chord38Url
-      , name: ""
+      , name: "Emin6"
       }
     , { file: chord39Url
-      , name: ""
+      , name: "A"<>seventh
       }
     , { file: chord40Url
-      , name: ""
+      , name: "Emin"<>seventh
       }
     , { file: chord41Url
-      , name: ""
+      , name: "Emin"<>seventh
       }
     , { file: chord42Url
-      , name: ""
+      , name: "A+11"
       }
     , { file: chord43Url
-      , name: ""
+      , name: "Emin"<>seventh
       }
     , { file: chord44Url
-      , name: ""
+      , name: "Emin"<>seventh<>flat<>"5"
       }
     , { file: chord45Url
-      , name: ""
+      , name: "D+2"
       }
     , { file: chord46Url
-      , name: ""
+      , name: "F"<>sharp<>seventh
       }
     , { file: chord47Url
-      , name: ""
+      , name: "A/F"
       }
     , { file: chord48Url
-      , name: ""
+      , name: "Dmin"
       }
     , { file: chord49Url
-      , name: ""
+      , name: "Dmin"<>seventh
       }
     , { file: chord50Url
-      , name: ""
+      , name: "G"<>sharp<>"dim"<>seventh
       }
     , { file: chord51Url
-      , name: ""
+      , name: "Emin"<>seventh
       }
     , { file: chord52Url
-      , name: ""
+      , name: "Edim"<>seventh
       }
     , { file: chord53Url
-      , name: ""
+      , name: "P"
       }
     , { file: chord54Url
-      , name: ""
+      , name: "Edim"<>seventh
       }
     , { file: chord55Url
-      , name: ""
+      , name: "A"<>sharp<>"dim"<>seventh
       }
     , { file: chord56Url
-      , name: ""
+      , name: "B"<>seventh
       }
     , { file: chord57Url
-      , name: ""
+      , name: "Cmaj"<>seventh
       }
     , { file: chord58Url
-      , name: ""
+      , name: "E"<>sharp<>"dim"<>seventh
       }
     , { file: chord59Url
-      , name: ""
+      , name: "F"<>sharp<>seventh
       }
     , { file: chord60Url
-      , name: ""
+      , name: "Bmin"
       }
     ]
 
 chordTiming :: Array Number
-chordTiming = spyWith "length" Array.length
+chordTiming =
   [
+
+
+
     0.0,
     3.5818333333333334,
     6.6275,
@@ -344,15 +359,15 @@ chordTiming = spyWith "length" Array.length
     43.83116666666667,
     45.591166666666666,
     46.4925,
-    47.3485,
+    47.5,
     50.249833333333335,
     52.0685,
     53.7285,
-    56.875166666666665,
+    56.6,
     58.2485,
     59.847166666666666,
     61.773833333333336,
-    63.6965,
+    63.75,
     65.75116666666666,
     67.96316666666667,
     69.446,
@@ -362,7 +377,7 @@ chordTiming = spyWith "length" Array.length
     75.52983333333333,
     79.81516666666667,
     85.63516666666666,
-    87.2085,
+    87.2085,--
     91.74183333333333,
     93.248,
     94.71116666666667,

@@ -138,14 +138,14 @@ a[href] {
 .chord::after {
   content: '';
   position: absolute;
-  top: calc(var(--padding) + 4px);
+  top: calc(var(--padding) - 1px);
   width: 100%;
   border-bottom: 2px solid #fffa;
 }
 .chord::before {
   content: attr(data-chord-name);
   position: absolute;
-  top: calc(var(--padding) - 9px);
+  top: calc(var(--padding) - 14px);
   white-space: pre-line;
   line-height: 1.25;
   left: 0.3em;

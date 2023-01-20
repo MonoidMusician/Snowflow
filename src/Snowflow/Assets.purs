@@ -135,7 +135,7 @@ chords :: Array
   , name :: String
   }
 chords =
-  Array.mapWithIndex (\i c -> c { name = show (i+1) <> "\n" <> c.name }) $
+  Array.mapWithIndex (\i c -> c { name = show (i+1) <> "–" <> c.name }) $
   -- 6 (B higher) 18 28 29
   -- 32 34 36 38 (more C#) 47
   -- 26 27 more ring
@@ -146,6 +146,7 @@ chords =
   flat = "\x266D"
   seventh = const "7" "\x2077"
   chordInfo = Array.take 20 <> Array.take 15 <> Array.drop 20 $
+    Array.mapWithIndex (\i c -> c { name = show (i+1) <> "\n" <> c.name }) $
     [ { file: chord1Url
       , name: "Emin"
       }

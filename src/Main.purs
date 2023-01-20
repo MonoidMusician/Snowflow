@@ -722,7 +722,7 @@ main = launchAff_ do
           let
             chOp = time # maybe stop
               \t ->
-                let delay = spy "delay" $ max 0.0 (chord.startTime - section.startTime) - t
+                let delay = max 0.0 (chord.startTime - section.startTime) - t
                 in if delay >= 0.0 then restartAfter delay else mempty
           inGroup pizzicati chOp chordI
   liftEffect $ forWithIndex_ sections \i section -> do

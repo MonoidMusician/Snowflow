@@ -1,6 +1,3 @@
-import main0 from "assets/samples/composite.wav";
-import pizzs1 from "assets/samples/CHORD 60.wav";
-
 import melody1 from "assets/samples/MELODY 1.wav";
 import melody2 from "assets/samples/MELODY 2.wav";
 import melody3 from "assets/samples/MELODY 3.wav";
@@ -67,9 +64,6 @@ import chord57 from "assets/samples/CHORD 57.wav";
 import chord58 from "assets/samples/CHORD 58.wav";
 import chord59 from "assets/samples/CHORD 59.wav";
 import chord60 from "assets/samples/CHORD 60.wav";
-
-export const main0Url = main0;
-export const pizzs1Url = pizzs1;
 
 export const melody1Url = melody1;
 export const melody2Url = melody2;

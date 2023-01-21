@@ -44,7 +44,7 @@ import Debug (spy)
 import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
-import Deku.Listeners (click_)
+import Deku.Listeners (checkbox_, click_)
 import Deku.Toplevel (runInBody) as Deku
 import Effect (Effect)
 import Effect.Aff (Canceler(..), Milliseconds(..), launchAff_, makeAff, try)
@@ -589,6 +589,9 @@ main = launchAff_ do
   liftEffect $ setStatus "Loading samples …"
   soundManager <- liftEffect $ newManager (Just dlCtx)
 
+  autoChords <- liftEffect $ Ref.new false
+  straightThrough <- liftEffect $ Ref.new false
+
   let nSamples = sum $ Assets.sections <#> \section -> 1 + Array.length section.chords
   sampleN <- liftEffect $ Ref.new 0
   let
@@ -713,22 +716,29 @@ main = launchAff_ do
             ]
         ]
     controlMelody op section = do
-      pretime <- SM.get (soundOffset section.soundI)
       inGroup melody op section.soundI
+      doAutoChords section
+    doAutoChords section = do
+      pretime <- SM.get (soundOffset section.soundI)
       playing <- SM.get (soundPlaying section.soundI)
-      let time = pretime <$ guard playing
+      autoChordsNow <- Ref.read autoChords
+      let time = pretime <$ guard (playing && autoChordsNow)
+      logShow time
       for_ section.chords \chord -> do
         for_ chord.chordI \chordI -> do
           let
             chOp = time # maybe stop
               \t ->
                 let delay = max 0.0 (chord.startTime - section.startTime) - t
-                in if delay >= 0.0 then restartAfter delay else mempty
+                in if delay >= -0.01 then restartAfter delay else mempty
           inGroup pizzicati chOp chordI
+    doAllAutoChords = for_ sections doAutoChords
+
   liftEffect $ forWithIndex_ sections \i section -> do
     for_ (sections Array.!! (i + 1)) \section2 -> do
       void $ Event.subscribe (soundOffsetThreshold section.soundI (section2.startTime - section.startTime)) \_ -> do
-        controlMelody restart section2
+        whenM (Ref.read straightThrough) do
+          controlMelody restart section2
 
   liftEffect $ setStatus ""
   liftEffect $ setAttribute "style" "" =<< existingElement "help"
@@ -740,6 +750,7 @@ main = launchAff_ do
           [ flip D.input [] $ oneOf
             [ D.Xtype !:= "checkbox"
             , D.Checked !:= "false"
+            , checkbox_ (\v -> Ref.write v autoChords *> doAllAutoChords)
             ]
           , DC.text_ " Auto chords"
           ]
@@ -750,6 +761,7 @@ main = launchAff_ do
           [ flip D.input [] $ oneOf
             [ D.Xtype !:= "checkbox"
             , D.Checked !:= "false"
+            , checkbox_ (Ref.write <@> straightThrough)
             ]
           , DC.text_ " Straight through"
           ]

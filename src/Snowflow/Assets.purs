@@ -7,9 +7,6 @@ import Data.Int as Int
 import Data.TraversableWithIndex (mapAccumRWithIndex)
 import Record as Record
 
-foreign import main0Url :: String
-foreign import pizzs1Url :: String
-
 foreign import melody1Url :: String
 foreign import melody2Url :: String
 foreign import melody3Url :: String

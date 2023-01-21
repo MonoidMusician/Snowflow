@@ -231,6 +231,7 @@ newtype SoundInstance = SoundInstance
   { metadata :: SoundMetadata
   , id :: Int
   , info :: DValue
+    -- TODO: fix for delayed cutoff
     { startOffset :: Number
     , playingSince :: Maybe Number
     }
@@ -245,8 +246,9 @@ soundOffset sound@(SoundInstance { info }) = ado
   { startOffset, playingSince } <- output info
   currentTime <- soundTime sound
   in case playingSince of
-    Just t0 -> startOffset + (currentTime - t0)
-    Nothing -> startOffset
+    Just t0 | currentTime >= t0 ->
+      startOffset + (currentTime - t0)
+    _ -> startOffset
 
 soundOffsetNorm :: SoundInstance -> OValue Number
 soundOffsetNorm sound@(SoundInstance { metadata: { duration } }) =
@@ -255,7 +257,7 @@ soundOffsetNorm sound@(SoundInstance { metadata: { duration } }) =
 soundPlaying :: SoundInstance -> OValue Boolean
 soundPlaying sound@(SoundInstance { info }) =
   (isJust <<< _.playingSince <$> output info)
-  && ((_ < 1.0) <$> output (soundOffsetNorm sound))
+  && (((_ >= 0.0) && (_ < 1.0)) <$> output (soundOffsetNorm sound))
 
 contextTime :: AudioContext -> OValue Number
 contextTime context = IOValue
@@ -295,7 +297,7 @@ restart = restartAfter 0.0
 restartAfter :: Number -> SoundPlay
 restartAfter delay sound@(SoundInstance { metadata: { buffer }, info }) = do
   playingSince <- get $ soundTime sound
-  set { startOffset: 0.0, playingSince: Just playingSince } info
+  set { startOffset: 0.0, playingSince: Just (playingSince + delay) } info
   pure $ pure $ SoundInstruction { delay, then: Just { buffer, bufferOffset: 0.0 } }
 
 resume :: SoundPlay
@@ -310,7 +312,7 @@ resumeAfter delay sound@(SoundInstance { metadata: { buffer, duration }, info })
       if startOffset >= duration
         then 0.0
         else startOffset
-  set { startOffset: newStartOffset, playingSince: Just playingSince } info
+  set { startOffset: newStartOffset, playingSince: Just (playingSince + delay) } info
   pure $ pure $ SoundInstruction { delay, then: Just { buffer, bufferOffset: newStartOffset } }
 
 stop :: SoundPlay
@@ -321,6 +323,11 @@ stopAfter delay sound@(SoundInstance { info }) = do
   startOffset <- get $ soundOffset sound
   set { startOffset, playingSince: Nothing } info
   pure $ pure $ SoundInstruction { delay, then: Nothing }
+
+reset :: SoundPlay
+reset (SoundInstance { info }) = do
+  set { startOffset: 0.0, playingSince: Nothing } info
+  pure $ pure $ SoundInstruction { delay: 0.0, then: Nothing }
 
 -- TODO
 -- afterEnd :: SoundInstance -> Effect Unit -> Effect Unit

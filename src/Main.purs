@@ -8,6 +8,7 @@ import Control.Alternative (guard)
 import Control.Monad.ST as ST
 import Control.Monad.State (execState, get, gets)
 import Data.Align (align)
+import Data.Array ((!!))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Array.ST as ArrayST
@@ -17,7 +18,7 @@ import Data.Bifunctor (class Bifunctor, bimap, lmap, rmap)
 import Data.DateTime.Instant (Instant, unInstant)
 import Data.DateTime.Instant as Instant
 import Data.Either (hush)
-import Data.Foldable (class Foldable, foldl, for_, maximumBy, oneOf, sum, traverse_)
+import Data.Foldable (class Foldable, foldl, for_, maximumBy, oneOf, or, sum, traverse_)
 import Data.FoldableWithIndex (foldMapWithIndex, forWithIndex_)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -40,7 +41,6 @@ import Data.Traversable (for, traverse)
 import Data.TraversableWithIndex (mapAccumLWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.UInt as UInt
-import Debug (spy)
 import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
@@ -68,7 +68,7 @@ import Ocarina.WebAPI (AnalyserNodeCb(..), AudioContext)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Record as Record
 import Snowflow.Assets as Assets
-import Snowflow.SoundManager (SoundManager(..), embedSoundGroup, inGroup, instantiate, listen, loadSound, newManager, newSoundGroup, restart, restartAfter, resume, soundOffset, soundOffsetNorm, soundOffsetThreshold, soundOverrun, soundPlaying, soundTime, stop, toggle)
+import Snowflow.SoundManager (SoundManager(..), embedSoundGroup, inGroup, instantiate, listen, loadSound, make, newManager, newSoundGroup, restart, restartAfter, resume, soundOffset, soundOffsetNorm, soundOffsetThreshold, soundPlaying, stop, toggle)
 import Snowflow.SoundManager as SM
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -715,15 +715,36 @@ main = launchAff_ do
             , Oc.gain_ 1.0 [ embedSoundGroup pizzicati ]
             ]
         ]
-    controlMelody op section = do
+
+  mainButton <- liftEffect $ make $ Tuple "Loading" (pure unit)
+  let
+    doNext label action = SM.set (Tuple label action) mainButton
+    controlMelody_ op section = do
       inGroup melody op section.soundI
       doAutoChords section
+    controlMelody op section = do
+      controlMelody_ op section
+      controlMelodyResult section
+    controlMelodyResult sectionChanged = do
+      playing <- for sections (SM.get <<< soundPlaying <<< _.soundI)
+      case or playing of
+        true -> doNext "Pause" do
+          paused <- for sections \section -> do
+            wasPlaying <- SM.get (soundPlaying section.soundI)
+            controlMelody_ stop section
+            pure wasPlaying
+          doNext "Resume" do
+            for_ (Array.zip sections paused) \(Tuple section wasPaused) -> do
+              when wasPaused do
+                controlMelody resume section
+        false ->
+          doNext "Resume" do
+            controlMelody_ resume sectionChanged
     doAutoChords section = do
       pretime <- SM.get (soundOffset section.soundI)
       playing <- SM.get (soundPlaying section.soundI)
       autoChordsNow <- Ref.read autoChords
       let time = pretime <$ guard (playing && autoChordsNow)
-      logShow time
       for_ section.chords \chord -> do
         for_ chord.chordI \chordI -> do
           let
@@ -733,12 +754,24 @@ main = launchAff_ do
                 in if delay >= -0.01 then restartAfter delay else mempty
           inGroup pizzicati chOp chordI
     doAllAutoChords = for_ sections doAutoChords
+  liftEffect $ doNext "Start" do
+    for_ (sections !! 0) \section -> do
+      ocarinaOfTime
+      controlMelody restart section
 
   liftEffect $ forWithIndex_ sections \i section -> do
-    for_ (sections Array.!! (i + 1)) \section2 -> do
-      void $ Event.subscribe (soundOffsetThreshold section.soundI (section2.startTime - section.startTime)) \_ -> do
-        whenM (Ref.read straightThrough) do
+    let msection2 = sections Array.!! (i + 1)
+    let nextTime = maybe (section.startTime + section.length) _.startTime msection2
+    void $ Event.subscribe (soundOffsetThreshold section.soundI (nextTime - section.startTime)) \_ -> do
+      Ref.read straightThrough >>= case _, msection2 of
+        true, Just section2 -> do
           controlMelody restart section2
+        false, Just section2 -> do
+          doNext "Resume" do
+            controlMelody restart section2
+        _, Nothing -> do
+          doNext "Restart" do
+            for_ (sections !! 0) (controlMelody restart)
 
   liftEffect $ setStatus ""
   liftEffect $ setAttribute "style" "" =<< existingElement "help"
@@ -754,8 +787,8 @@ main = launchAff_ do
             ]
           , DC.text_ " Auto chords"
           ]
-        , D.div_ $ pure $ D.button (oneOf [])
-          [ DC.text_ "Pause"
+        , D.div_ $ pure $ D.button (D.OnClick <:=> listen (snd <$> mainButton))
+          [ DC.text (listen (fst <$> mainButton))
           ]
         , D.div_ $ pure $ D.label_
           [ flip D.input [] $ oneOf

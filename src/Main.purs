@@ -49,7 +49,6 @@ import Deku.Toplevel (runInBody) as Deku
 import Effect (Effect)
 import Effect.Aff (Canceler(..), Milliseconds(..), launchAff_, makeAff, try)
 import Effect.Class (class MonadEffect, liftEffect)
-import Effect.Class.Console (logShow)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Effect.Timer (setTimeout)
@@ -68,7 +67,7 @@ import Ocarina.WebAPI (AnalyserNodeCb(..), AudioContext)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Record as Record
 import Snowflow.Assets as Assets
-import Snowflow.SoundManager (SoundManager(..), embedSoundGroup, inGroup, instantiate, listen, loadSound, make, newManager, newSoundGroup, restart, restartAfter, resume, soundOffset, soundOffsetNorm, soundOffsetThreshold, soundPlaying, stop, toggle)
+import Snowflow.SoundManager (SoundManager(..), embedSoundGroup, inGroup, instantiate, listen, loadSound, make, newManager, newSoundGroup, reset, restart, restartAfter, resume, soundOffset, soundOffsetNorm, soundOffsetThreshold, soundPlaying, stop, toggle)
 import Snowflow.SoundManager as SM
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -590,7 +589,7 @@ main = launchAff_ do
   soundManager <- liftEffect $ newManager (Just dlCtx)
 
   autoChords <- liftEffect $ Ref.new false
-  straightThrough <- liftEffect $ Ref.new false
+  straightThrough <- liftEffect $ Ref.new true
 
   let nSamples = sum $ Assets.sections <#> \section -> 1 + Array.length section.chords
   sampleN <- liftEffect $ Ref.new 0
@@ -770,8 +769,10 @@ main = launchAff_ do
           doNext "Resume" do
             controlMelody restart section2
         _, Nothing -> do
-          doNext "Restart" do
-            for_ (sections !! 0) (controlMelody restart)
+          doNext "Reset" do
+            for_ sections (reset <<< _.soundI)
+            doNext "Start" do
+              for_ (sections !! 0) (controlMelody restart)
 
   liftEffect $ setStatus ""
   liftEffect $ setAttribute "style" "" =<< existingElement "help"
@@ -793,14 +794,14 @@ main = launchAff_ do
         , D.div_ $ pure $ D.label_
           [ flip D.input [] $ oneOf
             [ D.Xtype !:= "checkbox"
-            , D.Checked !:= "false"
+            , D.Checked !:= "true"
             , checkbox_ (Ref.write <@> straightThrough)
             ]
           , DC.text_ " Straight through"
           ]
         ]
       , D.div (D.Class !:= "scene" <|> D.Style <:=> ((pure [] <|> currentVibeS) <#> \vibe -> "background:" <> gradientVibe vibe)) $
-        sections <#> \section -> D.section (D.Style !:= "width:20%") $
+        sections <#> \section -> D.section (D.Style !:= "width:20%") $ Array.reverse
         [ D.div_ $ section.chords <#> \{ name, startNorm, chordM: chordm } -> flip D.hr [] $ oneOf
           let tRule = clamp 0.0 1.0 startNorm in
           [ D.Class !:= "chord"
@@ -810,6 +811,9 @@ main = launchAff_ do
               if tRule == 0.0
                 then do
                   controlMelody restart section
+                  whenM (not <$> Ref.read autoChords) do
+                    for_ chordm \chordM -> do
+                      inGroup pizzicati restart =<< instantiate chordM
                 else do
                   for_ chordm \chordM -> do
                     inGroup pizzicati restart =<< instantiate chordM

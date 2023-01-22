@@ -4,7 +4,7 @@ import Prelude
 
 import CSS.Color (Color)
 import Control.Alt ((<|>))
-import Control.Alternative (guard)
+import Control.Alternative (empty, guard)
 import Control.Monad.ST as ST
 import Control.Monad.State (execState, get, gets)
 import Data.Align (align)
@@ -41,7 +41,7 @@ import Data.Traversable (for, traverse)
 import Data.TraversableWithIndex (forWithIndex, mapAccumLWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.UInt as UInt
-import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
+import Deku.Attribute (prop', unsafeAttribute, (!:=), (:=), (<:=>))
 import Deku.Control as DC
 import Deku.DOM as D
 import Deku.Listeners (checkbox_, click_)
@@ -803,30 +803,53 @@ main = launchAff_ do
         ]
       , D.div (D.Class !:= "scene" <|> D.Style <:=> ((pure [] <|> currentVibeS) <#> \vibe -> "background:" <> gradientVibe vibe)) $
         sections <#> \section -> D.section (D.Style !:= "width:20%") $ Array.reverse
-        [ D.div_ $ section.chords <#> \{ name, startNorm, chordM: chordm } -> flip D.hr [] $ oneOf do
-          let
-            tRule = clamp 0.0 1.0 startNorm
-            act = do
-              ocarinaOfTime
-              if tRule == 0.0
-                then do
-                  controlMelody restart section
-                  whenM (not <$> Ref.read autoChords) do
+        [ compose D.svg oneOf
+          [ D.Style !:= "width:100%;height:100%;overflow:hidden;"
+          ]
+          $ section.chords <#> \{ name, startNorm, chordM: chordm } -> do
+            let
+              tRule = clamp 0.0 1.0 startNorm
+              act = do
+                ocarinaOfTime
+                if tRule == 0.0
+                  then do
+                    controlMelody restart section
+                    whenM (not <$> Ref.read autoChords) do
+                      for_ chordm \chordM -> do
+                        inGroup pizzicati restart =<< instantiate chordM
+                  else do
                     for_ chordm \chordM -> do
                       inGroup pizzicati restart =<< instantiate chordM
-                else do
-                  for_ chordm \chordM -> do
-                    inGroup pizzicati restart =<< instantiate chordM
-          [ D.Class !:= "chord"
-          , pure (xdata "chord-name" name)
-          , D.OnMousedown !:= act
-          , D.Self !:= (\(e :: DOM.Element) -> eventListener (const act <> preventDefault) >>= \el -> addEventListener (EventType "touchstart") el false (Element.toEventTarget e))
-          -- , D.OnTouchstart !:= cb (const act <> preventDefault)
-          , D.Style <:=> do
-              let pct v = "calc(" <> show ((2.0 * tRule - v) * 100.0) <> "% - " <> show ((v - 0.5) * size) <> "px)"
-              dedup (listen (soundOffsetNorm section.soundI)) <#> clamp 0.0 1.0 >>>
-                \t -> "position: absolute; left: 0; top: " <> pct t <> "; width: 100%"
-          ]
+            compose D.g oneOf
+              [ D.Class !:= "chord"
+              , D.OnMousedown !:= act
+              , D.Self !:= (\(e :: DOM.Element) -> eventListener (const act <> preventDefault) >>= \el -> addEventListener (EventType "touchstart") el false (Element.toEventTarget e))
+              -- , D.OnTouchstart !:= cb (const act <> preventDefault)
+              , D.Style <:=> do
+                  let pct v = "calc(" <> show ((2.0 * tRule - v) * 100.0) <> "% - " <> show ((v - 0.5) * size) <> "px)"
+                  dedup (listen (soundOffsetNorm section.soundI)) <#> clamp 0.0 1.0 >>>
+                    \t -> "transform: translateY(" <> pct t <> ")"
+              ]
+              [ flip D.rect [] $ oneOf
+                [ D.X !:= "0"
+                , D.Y !:= "-15"
+                , D.Width !:= "10000"
+                , D.Height !:= "215"
+                , D.Style !:= "fill:none;stroke:none;pointer-events: bounding-box;"
+                ]
+              , compose D.text oneOf
+                [ D.X !:= "4"
+                , D.Y !:= "-3"
+                , D.Style !:= "stroke:none;fill:white;font-size:12px"
+                ] $ String.split (String.Pattern "\n") name # mapWithIndex \i ->
+                    DC.text_ >>> pure >>> D.tspan (D.X !:= "4" <|> if i == 0 then empty else pure (unsafeAttribute { key: "dy", value: prop' "1.2em" }))
+              , flip D.line [] $ oneOf
+                [ D.X1 !:= "0"
+                , D.X2 !:= "10000"
+                , D.Y1 !:= "0"
+                , D.Y2 !:= "0"
+                ]
+              ]
         , D.svg
             ( oneOf
                 [ D.Width !:= show (padding + size + padding)

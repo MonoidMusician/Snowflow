@@ -142,34 +142,16 @@ a[href] {
 
 .chord {
   cursor: pointer;
-  border: none;
-  --padding: 15px;
-  margin-top: calc(-1 * var(--padding));
-  padding-top: var(--padding);
-  padding-bottom: 200px;
   opacity: 20%;
   transition: opacity 0.2s;
-  overflow: visible;
+  stroke: #fffa;
+  stroke-width: 2px;
 }
 .chord:hover {
   opacity: 80%;
 }
-.chord::after {
-  content: '';
-  position: absolute;
-  top: calc(var(--padding) - 1px);
-  width: 100%;
-  border-bottom: 2px solid #fffa;
-}
-.chord::before {
-  content: attr(data-chord-name);
-  position: absolute;
-  top: calc(var(--padding) - 14px);
-  white-space: pre-line;
-  line-height: 1.25;
-  left: 0.3em;
+.chord text {
   font-family: 'Libertinus Sans', 'Libertinus Serif', sans-serif;
-  font-size: 12px;
 }
 
 button {

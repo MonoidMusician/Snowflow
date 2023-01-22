@@ -1,5 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Arima+Madurai:wght@200;400;700&display=swap');
-@import url('https://fonts.cdnfonts.com/css/libertinus-sans');
+@font-face{
+    font-family:libertinus sans;
+    font-style:normal;
+    font-weight:400;
+    src:url(https://fonts.cdnfonts.com/s/19341/LibertinusSans-Regular.woff) format('woff')
+}
+@font-face{
+    font-family:libertinus sans;
+    font-style:italic;
+    font-weight:400;
+    src:url(https://fonts.cdnfonts.com/s/19341/LibertinusSans-Italic.woff) format('woff')
+}
+
 @import url('https://fonts.cdnfonts.com/css/libertinus-serif');
 
 body {
@@ -111,12 +123,19 @@ a[href] {
 .scene {
   width: 100vw;
   height: 100vh;
+  height: -webkit-fill-available;
+  height: -moz-available;
+  height: stretch;
+
   position: relative;
   overflow: hidden;
 }
 .scene > section {
   width: 20%;
   height: 100%;
+  height: -webkit-fill-available;
+  height: -moz-available;
+  height: stretch;
   display: inline-block;
   position: relative;
 }

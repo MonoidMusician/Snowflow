@@ -766,7 +766,7 @@ main = launchAff_ do
         true, Just section2 -> do
           controlMelody restart section2
         false, Just section2 -> do
-          doNext "Resume" do
+          doNext "Continue" do
             controlMelody restart section2
         _, Nothing -> do
           doNext "Reset" do

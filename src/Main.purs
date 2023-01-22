@@ -38,7 +38,7 @@ import Data.String as String
 import Data.String.CodeUnits as CodeUnits
 import Data.These (These(..), these)
 import Data.Traversable (for, traverse)
-import Data.TraversableWithIndex (mapAccumLWithIndex)
+import Data.TraversableWithIndex (forWithIndex, mapAccumLWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.UInt as UInt
 import Deku.Attribute (xdata, (!:=), (:=), (<:=>))
@@ -72,6 +72,7 @@ import Snowflow.SoundManager as SM
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM.Element (setAttribute)
+import Web.DOM.Element as DOM
 import Web.DOM.Element as Element
 import Web.DOM.Node (setTextContent)
 import Web.DOM.NonElementParentNode (getElementById)
@@ -597,7 +598,7 @@ main = launchAff_ do
     loadSample = liftEffect do
       n <- Ref.modify (_ + 1) sampleN
       setStatus $ "Loading sample " <> show n <> "/" <> show nSamples <> " …"
-  sections <- for Assets.sections \section -> do
+  sections <- forWithIndex Assets.sections \i section -> do
     loadSample
     soundM <- loadSound soundManager section.file
     soundI <- liftEffect $ instantiate soundM
@@ -606,7 +607,7 @@ main = launchAff_ do
       chordM <- hush <$> try (loadSound soundManager chord.file)
       chordI <- liftEffect $ traverse instantiate chordM
       pure $ Record.merge { chordM, chordI } chord
-    pure $ Record.merge { soundM, soundI, chords } section
+    pure $ Record.merge { soundM, soundI, chords, i } section
 
   melody <- liftEffect $ newSoundGroup $ Just dlCtx
   pizzicati <- liftEffect $ newSoundGroup $ Just dlCtx
@@ -802,11 +803,10 @@ main = launchAff_ do
         ]
       , D.div (D.Class !:= "scene" <|> D.Style <:=> ((pure [] <|> currentVibeS) <#> \vibe -> "background:" <> gradientVibe vibe)) $
         sections <#> \section -> D.section (D.Style !:= "width:20%") $ Array.reverse
-        [ D.div_ $ section.chords <#> \{ name, startNorm, chordM: chordm } -> flip D.hr [] $ oneOf
-          let tRule = clamp 0.0 1.0 startNorm in
-          [ D.Class !:= "chord"
-          , pure (xdata "chord-name" name)
-          , D.OnMousedown !:= do
+        [ D.div_ $ section.chords <#> \{ name, startNorm, chordM: chordm } -> flip D.hr [] $ oneOf do
+          let
+            tRule = clamp 0.0 1.0 startNorm
+            act = do
               ocarinaOfTime
               if tRule == 0.0
                 then do
@@ -817,6 +817,11 @@ main = launchAff_ do
                 else do
                   for_ chordm \chordM -> do
                     inGroup pizzicati restart =<< instantiate chordM
+          [ D.Class !:= "chord"
+          , pure (xdata "chord-name" name)
+          , D.OnMousedown !:= act
+          , D.Self !:= (\(e :: DOM.Element) -> eventListener (const act <> preventDefault) >>= \el -> addEventListener (EventType "touchstart") el false (Element.toEventTarget e))
+          -- , D.OnTouchstart !:= cb (const act <> preventDefault)
           , D.Style <:=> do
               let pct v = "calc(" <> show ((2.0 * tRule - v) * 100.0) <> "% - " <> show ((v - 0.5) * size) <> "px)"
               dedup (listen (soundOffsetNorm section.soundI)) <#> clamp 0.0 1.0 >>>
@@ -839,7 +844,7 @@ main = launchAff_ do
             [ D.defs_
                 [ D.linearGradient
                     ( oneOf
-                        [ D.Id !:= "linearGradientArm"
+                        [ D.Id !:= "linearGradientArm" <> show section.i
                         , D.GradientUnits !:= "userSpaceOnUse"
                         , keepLatest $ (if rotateGrad then rotating else pure 0.0) <#> \angle ->
                             line (rotate angle (Tuple 0.0 radius)) (rotate angle (Tuple 0.0 (negate radius)))
@@ -879,7 +884,7 @@ main = launchAff_ do
                       [ pure $ flip D.path [] $ oneOf
                           [ D.D !:= drawArms [ vss, vss, vss, vss, vss, vss ]
                           , D.FillOpacity !:= ".91"
-                          , D.Stroke !:= if useStroke then "url(#linearGradientArm)" else "none"
+                          , D.Stroke !:= if useStroke then "url(#linearGradientArm" <> show section.i <> ")" else "none"
                           , D.StrokeWidth !:= "0.6"
                           , D.Filter !:= if useFilter then "url(#filter17837)" else "none"
                           ]

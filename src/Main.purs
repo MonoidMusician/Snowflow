@@ -659,9 +659,6 @@ main = launchAff_ do
     drawArms =
       toPath <<< foldMapWithIndex \i -> drawArm (incr i 60.0)
 
-    rotating = animationTime <#> unInstant >>> unwrap >>> \t ->
-      t / 1000.0 * 120.0
-
     rotateGrad = false
     useStroke = false
     useFilter = false
@@ -861,15 +858,20 @@ main = launchAff_ do
                     let pct v = "calc(" <> show (v * 100.0) <> "% - " <> show (padding + v * size) <> "px)"
                     let centered = pct 0.5
                     dedup (listen (soundOffsetNorm section.soundI)) <#> clamp 0.0 1.0 >>>
-                      \t -> "position: absolute; left: " <> centered <> "; top: " <> pct t <> ";"
+                      \t -> "pointer-events: none;position: absolute; left: " <> centered <> "; top: " <> pct t <> ";"
                 ]
             )
+            let
+              rotateThis = Event.fold (+) 0.0 $ Event.withLast currentAngle <#> \{ last, now } -> do
+                let playing = unsafePerformEffect (SM.get (soundPlaying section.soundI))
+                if playing then now - fromMaybe 0.0 last else 0.0
+            in
             [ D.defs_
                 [ D.linearGradient
                     ( oneOf
                         [ D.Id !:= "linearGradientArm" <> show section.i
                         , D.GradientUnits !:= "userSpaceOnUse"
-                        , keepLatest $ (if rotateGrad then rotating else pure 0.0) <#> \angle ->
+                        , keepLatest $ (if rotateGrad then rotateThis else pure 0.0) <#> \angle ->
                             line (rotate angle (Tuple 0.0 radius)) (rotate angle (Tuple 0.0 (negate radius)))
                         ]
                     )
@@ -891,7 +893,7 @@ main = launchAff_ do
                     , D.StrokeLinecap !:= "butt"
                     , D.StrokeLinejoin !:= "miter"
                     , D.StrokeOpacity !:= "1"
-                    , currentAngle <#> \angle ->
+                    , rotateThis <#> \angle ->
                         D.Transform := "rotate(" <> show (((angle + 30.0) % if rotateGrad then 360.0 else 60.0) - 30.0) <> ")"
                     ]
                 ) $ join
